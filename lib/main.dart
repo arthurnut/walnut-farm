@@ -31,8 +31,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _submit() {
-    if (_formKey.currentState!.validate())
+    if (_formKey.currentState!.validate()) {
       widget.onLogin(_emailCtrl.text.trim(), _refCtrl.text.trim());
+    }
   }
 
   @override Widget build(BuildContext context) => Scaffold(
@@ -372,7 +373,11 @@ class FarmScreen extends StatelessWidget {
     return SafeArea(child: Stack(children: [
       Column(children: [
         Expanded(flex: 3, child: VisualGarden(game: game, selectedId: selectedId, onTreeTap: (id) {
-          if (selectedId == id) onSelectTree(null); else onSelectTree(id);
+          if (selectedId == id) {
+            onSelectTree(null);
+          } else {
+            onSelectTree(id);
+          }
         }, audioService: audioService)),
         const SizedBox(height: 8),
         _SkipDayButton(onPressed: onDaySkip),
@@ -1048,10 +1053,29 @@ class ActionPanel extends StatelessWidget {
 class _ProgressIndicatorRow extends StatelessWidget {
   final String label; final double progress; final Color color;
   const _ProgressIndicatorRow({required this.label, required this.progress, required this.color});
-  @override Widget build(BuildContext context) => Row(children: [
-    Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.muted)), const SizedBox(width: 6),
-    Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(2), child: LinearProgressIndicator(value: (progress % 1.0).clamp(0.0, 1.0), backgroundColor: Colors.white10, valueColor: AlwaysStoppedAnimation<Color>(color), minHeight: 4))),
-  ]);
+
+  @override Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      return Row(children: [
+        SizedBox(
+          width: min(120, constraints.maxWidth * 0.35),
+          child: Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.muted), overflow: TextOverflow.ellipsis, maxLines: 1),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: (progress % 1.0).clamp(0.0, 1.0),
+              backgroundColor: Colors.white10,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 4,
+            ),
+          ),
+        ),
+      ]);
+    });
+  }
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -1243,7 +1267,9 @@ class _LuckyScreenState extends State<LuckyScreen> with SingleTickerProviderStat
   }
 
   Future<void> _spin() async {
-    if (_spinning) return;
+    if (_spinning) {
+      return;
+    }
     if (widget.game.wlntBalance < bet) {
       setState(() {
         _result = 'Недостаточно средств';
@@ -1392,7 +1418,9 @@ class _LuckyScreenState extends State<LuckyScreen> with SingleTickerProviderStat
   }
 
   Widget _buildConfetti() {
-    if (!_showConfetti) return const SizedBox.shrink();
+    if (!_showConfetti) {
+      return const SizedBox.shrink();
+    }
     return Positioned.fill(child: CustomPaint(painter: _ConfettiPainter(_confetti)));
   }
 
