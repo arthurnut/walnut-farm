@@ -466,7 +466,7 @@ class _VisualGardenState extends State<VisualGarden> with TickerProviderStateMix
                 Icon(Icons.cloud, size: 45, color: const Color(0xAAFFFFFF)),
               ]),
             );
-          })),
+          }))),
         // Анимированный эффект переходса при смене погоды
         AnimatedBuilder(
           animation: _transitionOpacity,
