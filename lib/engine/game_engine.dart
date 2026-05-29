@@ -20,26 +20,34 @@ const resourceActionMap = <String, String>{
 };
 
 class GameEngine {
+  static const solToWlntRate = 1000.0;
+
   GameEngine({
     required this.gameDay,
     required this.wlntBalance,
+    required this.solBalance,
     required this.trees,
     required this.currentWeather,
     Map<String, int>? inventory,
     List<ResourceLot>? resourceLots,
     List<LeaderboardEntry>? leaderboard,
+    List<DailyChallenge>? dailyChallenges,
   })  : inventory = inventory ?? {'water_unit': 0, 'fertilizer_unit': 0, 'bird_unit': 0},
         resourceLots = resourceLots ?? [],
-        leaderboard = leaderboard ?? [];
+        leaderboard = leaderboard ?? [],
+        dailyChallenges = dailyChallenges ?? [];
+
 
   static const seasonLength = 30;
   int gameDay;
   double wlntBalance;
+  double solBalance;
   List<TreeModel> trees;
   WeatherType currentWeather;
   Map<String, int> inventory;
   List<ResourceLot> resourceLots;
   List<LeaderboardEntry> leaderboard;
+  List<DailyChallenge> dailyChallenges;
   DateTime? lastRealtimeTick;
 
   final List<void Function(String)> _incomeListeners = [];
@@ -222,6 +230,7 @@ class GameEngine {
     currentWeather = weatherForCycleDay(gameDay);
     _applyAutoWater();
     trees = trees.map(_advanceTree).toList();
+    dailyChallenges = dailyChallenges.map((challenge) => challenge.copyWith(current: 0, completed: false, claimed: false)).toList();
     final playerEntry = leaderboard.firstWhere((e) => e.isPlayer, orElse: () => LeaderboardEntry(name: '', wlntBalance: 0.0));
     if (playerEntry.name.isNotEmpty) {
       playerEntry.wlntBalance = wlntBalance;
@@ -446,6 +455,7 @@ class GameEngine {
     double income = tree.stats.income * (1 + tree.emotionBonus);
     wlntBalance += income;
     _notifyIncome('+${income.toStringAsFixed(0)} WLNT от ${tree.name}');
+    _incrementChallenge('harvest', 1);
     trees[i] = tree.copyWith(
       status: TreeStatus.rest,
       seasonDay: 1,
@@ -518,6 +528,20 @@ class GameEngine {
     trees.removeAt(i);
   }
 
+  bool convertSolToWlnt(double amount) {
+    if (amount <= 0 || solBalance < amount) return false;
+    solBalance -= amount;
+    wlntBalance += amount * solToWlntRate;
+    return true;
+  }
+
+  bool convertWlntToSol(double amount) {
+    if (amount <= 0 || wlntBalance < amount) return false;
+    wlntBalance -= amount;
+    solBalance += amount / solToWlntRate;
+    return true;
+  }
+
   void sellResource(String sellerEmail, String resourceType, int quantity, double pricePerUnit) {
     if ((inventory[resourceType] ?? 0) < quantity) return;
     inventory[resourceType] = (inventory[resourceType] ?? 0) - quantity;
@@ -529,6 +553,7 @@ class GameEngine {
       quantity: quantity,
       pricePerUnit: pricePerUnit,
     ));
+    _incrementChallenge('trade', 1);
   }
 
   void buyResource(String resourceLotId, String buyerEmail) {
@@ -550,24 +575,54 @@ class GameEngine {
     resourceLots.removeAt(idx);
   }
 
+  void _incrementChallenge(String id, int amount) {
+    final idx = dailyChallenges.indexWhere((c) => c.id == id);
+    if (idx == -1) return;
+    final challenge = dailyChallenges[idx];
+    if (challenge.completed) return;
+    final nextValue = (challenge.current + amount).clamp(0, challenge.target);
+    final completed = nextValue >= challenge.target;
+    dailyChallenges[idx] = challenge.copyWith(current: nextValue, completed: completed);
+  }
+
+  bool claimChallenge(String id) {
+    final idx = dailyChallenges.indexWhere((c) => c.id == id);
+    if (idx == -1) return false;
+    final challenge = dailyChallenges[idx];
+    if (!challenge.completed || challenge.claimed) return false;
+    wlntBalance += challenge.reward;
+    dailyChallenges[idx] = challenge.copyWith(claimed: true);
+    final playerEntry = leaderboard.firstWhere((e) => e.isPlayer, orElse: () => LeaderboardEntry(name: '', wlntBalance: 0.0));
+    if (playerEntry.name.isNotEmpty) {
+      playerEntry.wlntBalance = wlntBalance;
+    }
+    return true;
+  }
+
   Map<String, dynamic> toJson() => {
         'gameDay': gameDay,
         'wlntBalance': wlntBalance,
+        'solBalance': solBalance,
         'currentWeather': currentWeather.name,
         'inventory': inventory,
         'trees': trees.map((t) => t.toJson()).toList(),
         'resourceLots': resourceLots.map((r) => r.toJson()).toList(),
         'leaderboard': leaderboard.map((l) => l.toJson()).toList(),
+        'dailyChallenges': dailyChallenges.map((c) => c.toJson()).toList(),
       };
 
   factory GameEngine.fromJson(Map<String, dynamic> json) => GameEngine(
         gameDay: json['gameDay'] as int,
         wlntBalance: (json['wlntBalance'] as num).toDouble(),
+        solBalance: (json['solBalance'] as num?)?.toDouble() ?? 2.5,
         currentWeather: WeatherType.values.byName(json['currentWeather'] as String),
         inventory: Map<String, int>.from(json['inventory'] as Map),
         trees: (json['trees'] as List).map((item) => TreeModel.fromJson(Map<String, dynamic>.from(item as Map))).toList(),
         resourceLots: (json['resourceLots'] as List).map((item) => ResourceLot.fromJson(Map<String, dynamic>.from(item as Map))).toList(),
         leaderboard: (json['leaderboard'] as List).map((item) => LeaderboardEntry.fromJson(Map<String, dynamic>.from(item as Map))).toList(),
+        dailyChallenges: json['dailyChallenges'] != null
+          ? (json['dailyChallenges'] as List).map((item) => DailyChallenge.fromJson(Map<String, dynamic>.from(item as Map))).toList()
+          : null,
       );
 
   static List<TreeModel> initialTrees() => [
@@ -690,6 +745,7 @@ class GameEngine {
   static GameEngine initial({required String playerEmail, required double initialWlnt}) => GameEngine(
         gameDay: 1,
         wlntBalance: initialWlnt,
+        solBalance: 2.5,
         trees: initialTrees(),
         currentWeather: weatherForCycleDay(1),
         inventory: {'water_unit': 2, 'fertilizer_unit': 1, 'bird_unit': 0},

@@ -388,6 +388,64 @@ class LeaderboardEntry {
       );
 }
 
+class DailyChallenge {
+  final String id;
+  final String description;
+  final int target;
+  final int reward;
+  int current;
+  bool completed;
+  bool claimed;
+
+  DailyChallenge({
+    required this.id,
+    required this.description,
+    required this.target,
+    required this.reward,
+    this.current = 0,
+    this.completed = false,
+    this.claimed = false,
+  });
+
+  double get progress => target == 0 ? 1.0 : (current / target).clamp(0.0, 1.0);
+
+  DailyChallenge copyWith({
+    int? current,
+    bool? completed,
+    bool? claimed,
+  }) {
+    return DailyChallenge(
+      id: id,
+      description: description,
+      target: target,
+      reward: reward,
+      current: current ?? this.current,
+      completed: completed ?? this.completed,
+      claimed: claimed ?? this.claimed,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'description': description,
+        'target': target,
+        'reward': reward,
+        'current': current,
+        'completed': completed,
+        'claimed': claimed,
+      };
+
+  factory DailyChallenge.fromJson(Map<String, dynamic> json) => DailyChallenge(
+        id: json['id'] as String,
+        description: json['description'] as String,
+        target: json['target'] as int,
+        reward: json['reward'] as int,
+        current: json['current'] as int,
+        completed: json['completed'] as bool,
+        claimed: json['claimed'] as bool,
+      );
+}
+
 enum ActionType { water, fertilize, bird }
 
 class ActionEvent {

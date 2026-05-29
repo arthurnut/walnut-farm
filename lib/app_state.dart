@@ -133,6 +133,37 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> depositSol(double amount) async {
+    if (amount <= 0) return;
+    engine.solBalance += amount;
+    await saveGame();
+    notifyListeners();
+  }
+
+  Future<bool> withdrawSol(double amount) async {
+    if (amount <= 0 || engine.solBalance < amount) return false;
+    engine.solBalance -= amount;
+    await saveGame();
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> convertSolToWlnt(double solAmount) async {
+    final ok = engine.convertSolToWlnt(solAmount);
+    if (!ok) return false;
+    await saveGame();
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> convertWlntToSol(double wlntAmount) async {
+    final ok = engine.convertWlntToSol(wlntAmount);
+    if (!ok) return false;
+    await saveGame();
+    notifyListeners();
+    return true;
+  }
+
   Future<void> sellResource(String resourceType, int quantity, double pricePerUnit) async {
     engine.sellResource(userEmail, resourceType, quantity, pricePerUnit);
     await saveGame();
@@ -153,10 +184,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> updateBalances({double? depositSol, double? withdrawSol, double? depositWlnt, double? withdrawWlnt}) async {
     if (depositSol != null) {
-      // placeholder for external wallet logic
+      engine.solBalance += depositSol;
     }
     if (withdrawSol != null) {
-      // placeholder for external wallet logic
+      engine.solBalance -= withdrawSol;
     }
     if (depositWlnt != null) {
       engine.wlntBalance += depositWlnt;

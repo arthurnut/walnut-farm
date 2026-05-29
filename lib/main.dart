@@ -127,7 +127,6 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> with TickerProviderStateMixin, WidgetsBindingObserver {
   int _tab = 0;
   String? _selectedTreeId;
-  double _solBalance = 2.5;
   Timer? _realtimeTimer;
   late AnimationController _incomeAnimCtrl;
   final List<_FloatingIncome> _floatingIncomes = [];
@@ -260,6 +259,29 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
     _safePlay('sounds/click.mp3');
   }
 
+  Future<void> _depositSol(double amount) async {
+    await _appState.depositSol(amount);
+    setState(() {});
+  }
+
+  Future<void> _withdrawSol(double amount) async {
+    if (await _appState.withdrawSol(amount)) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _convertSolToWlnt(double amount) async {
+    if (await _appState.convertSolToWlnt(amount)) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _convertWlntToSol(double amount) async {
+    if (await _appState.convertWlntToSol(amount)) {
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final game = _appState.engine;
@@ -273,7 +295,22 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
             MarketScreen(game: game, userEmail: _appState.userEmail, onBuyTree: _buyTree, onCancelTreeSell: _cancelSell, onBuyResource: _buyResource, onCancelResourceSell: _cancelResourceSell, onSellResource: _sellResource, audioService: _audioService),
             LuckyScreen(game: game, onBurned: (id) async { await _appState.burnTree(id); _audioService.playClick(); }, audioService: _audioService),
             CollectionScreen(game: game, userEmail: _appState.userEmail, onSelectTree: _selectTree, onPlant: (id) async { if (await _appState.plantTree(id)) setState(() {}); _audioService.playClick(); }, onSell: _sellTree, onCancelSell: _cancelSell, leaderboard: game.leaderboard, onHarvest: (id) async { await _appState.harvestTree(id); _audioService.playClick(); setState(() {}); }, audioService: _audioService),
-            WalletScreen(solBalance: _solBalance, wlntBalance: game.wlntBalance, userEmail: _appState.userEmail, myReferralCode: _appState.referralCode, themeMode: _appState.themeMode, onToggleTheme: () => _appState.setThemeMode(_appState.themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark), onLogout: () async { await _appState.logout(); setState(() {}); }, onDepositSol: (a) async { setState(() => _solBalance += a); }, onWithdrawSol: (a) async { if (a <= _solBalance) setState(() => _solBalance -= a); }, onDepositWlnt: (a) async { await _appState.updateBalances(depositWlnt: a); }, onWithdrawWlnt: (a) async { if (a <= game.wlntBalance) await _appState.updateBalances(withdrawWlnt: a); }, audioService: _audioService),
+            WalletScreen(
+              solBalance: game.solBalance,
+              wlntBalance: game.wlntBalance,
+              userEmail: _appState.userEmail,
+              myReferralCode: _appState.referralCode,
+              themeMode: _appState.themeMode,
+              onToggleTheme: () => _appState.setThemeMode(_appState.themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark),
+              onLogout: () async { await _appState.logout(); setState(() {}); },
+              onDepositSol: (a) async { await _depositSol(a); },
+              onWithdrawSol: (a) async { await _withdrawSol(a); },
+              onDepositWlnt: (a) async { await _appState.updateBalances(depositWlnt: a); setState(() {}); },
+              onWithdrawWlnt: (a) async { if (a <= game.wlntBalance) { await _appState.updateBalances(withdrawWlnt: a); setState(() {}); } },
+              onConvertSolToWlnt: (a) async { await _convertSolToWlnt(a); },
+              onConvertWlntToSol: (a) async { await _convertWlntToSol(a); },
+              audioService: _audioService,
+            ),
           ]),
           ..._floatingIncomes.map((f) => Positioned(left: f.offset.dx, top: f.offset.dy - 50 * (1 - f.opacity), child: Opacity(opacity: f.opacity, child: Material(color: Colors.transparent, child: Text(f.message, style: TextStyle(color: AppTheme.gold, fontSize: 16, fontWeight: FontWeight.bold)))))),
         ],
@@ -860,7 +897,10 @@ class ActionPanel extends StatelessWidget {
 
   String _priceLabel(String careCode) {
     final resourceKey = resourceActionMap[careCode];
-    if (resourceKey != null && (game.inventory[resourceKey] ?? 0) > 0) return 'Из запаса';
+    if (resourceKey != null) {
+      final count = game.inventory[resourceKey] ?? 0;
+      if (count > 0) return 'Из запаса ($count)';
+    }
     return switch (careCode) {
       'water_bucket' => '200 WLNT', 'water_barrel' => '490 WLNT', 'water_tank' => '780 WLNT',
       'auto_water_basic' => '2100 WLNT', 'auto_water_cistern' => '5000 WLNT',
@@ -870,6 +910,33 @@ class ActionPanel extends StatelessWidget {
       'set_nest_son' => '500 WLNT', 'set_nest_father' => '1500 WLNT', 'set_nest_grandfather' => '4000 WLNT', 'set_nest_elder' => '10000 WLNT',
       _ => ''
     };
+  }
+
+  bool _isActionEnabled(String careCode) {
+    final resourceKey = resourceActionMap[careCode];
+    if (resourceKey != null) return (game.inventory[resourceKey] ?? 0) > 0;
+    final price = switch (careCode) {
+      'water_bucket' => 200,
+      'water_barrel' => 490,
+      'water_tank' => 780,
+      'auto_water_basic' => 2100,
+      'auto_water_cistern' => 5000,
+      'fertilize_normal' => 1000,
+      'fertilize_super' => 3000,
+      'woodpecker_1' => 200,
+      'woodpecker_5' => 950,
+      'woodpecker_10' => 1900,
+      'woodpecker_all' => 5000,
+      'set_bucket' => 500,
+      'set_barrel' => 1500,
+      'set_tank' => 4000,
+      'set_nest_son' => 500,
+      'set_nest_father' => 1500,
+      'set_nest_grandfather' => 4000,
+      'set_nest_elder' => 10000,
+      _ => double.infinity,
+    };
+    return price == 0 || game.wlntBalance >= price;
   }
 
   @override Widget build(BuildContext context) {
@@ -894,34 +961,34 @@ class ActionPanel extends StatelessWidget {
         if (isGrowth) ...[
           _SectionHeader('💧 ПОЛИВ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Ведро\n+20%', _priceLabel('water_bucket'), 'water_bucket', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Бочка\n+50%', _priceLabel('water_barrel'), 'water_barrel', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Бак\n+80%', _priceLabel('water_tank'), 'water_tank', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Ведро\n+20%', _priceLabel('water_bucket'), 'water_bucket', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('water_bucket')),
+            _SmallCareButton('Бочка\n+50%', _priceLabel('water_barrel'), 'water_barrel', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('water_barrel')),
+            _SmallCareButton('Бак\n+80%', _priceLabel('water_tank'), 'water_tank', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('water_tank')),
           ]),
           const SizedBox(height: 12), _SectionHeader('🔄 АВТОПОЛИВ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Базовый\n7д +20%', _priceLabel('auto_water_basic'), 'auto_water_basic', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Цистерна\n7д +50%', _priceLabel('auto_water_cistern'), 'auto_water_cistern', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Базовый\n7д +20%', _priceLabel('auto_water_basic'), 'auto_water_basic', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('auto_water_basic')),
+            _SmallCareButton('Цистерна\n7д +50%', _priceLabel('auto_water_cistern'), 'auto_water_cistern', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('auto_water_cistern')),
           ]),
           const SizedBox(height: 12), _SectionHeader('🌿 УДОБРЕНИЯ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Обычное\n-1 день', _priceLabel('fertilize_normal'), 'fertilize_normal', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Супер\n-3 дня', _priceLabel('fertilize_super'), 'fertilize_super', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Обычное\n-1 день', _priceLabel('fertilize_normal'), 'fertilize_normal', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('fertilize_normal')),
+            _SmallCareButton('Супер\n-3 дня', _priceLabel('fertilize_super'), 'fertilize_super', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('fertilize_super')),
           ]),
           const SizedBox(height: 12), _SectionHeader('🐦 ЗАЩИТА'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Сын\n-1', _priceLabel('woodpecker_1'), 'woodpecker_1', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Отец\n-5', _priceLabel('woodpecker_5'), 'woodpecker_5', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Дед\n-10', _priceLabel('woodpecker_10'), 'woodpecker_10', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Старейшина\nвсе', _priceLabel('woodpecker_all'), 'woodpecker_all', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Сын\n-1', _priceLabel('woodpecker_1'), 'woodpecker_1', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('woodpecker_1')),
+            _SmallCareButton('Отец\n-5', _priceLabel('woodpecker_5'), 'woodpecker_5', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('woodpecker_5')),
+            _SmallCareButton('Дед\n-10', _priceLabel('woodpecker_10'), 'woodpecker_10', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('woodpecker_10')),
+            _SmallCareButton('Старейшина\nвсе', _priceLabel('woodpecker_all'), 'woodpecker_all', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('woodpecker_all')),
           ]),
         ],
         if (isRest) ...[
           _SectionHeader('💧 СБОР ВОДЫ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Ведро', _priceLabel('set_bucket'), 'set_bucket', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Бочка', _priceLabel('set_barrel'), 'set_barrel', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Бак', _priceLabel('set_tank'), 'set_tank', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Ведро', _priceLabel('set_bucket'), 'set_bucket', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_bucket')),
+            _SmallCareButton('Бочка', _priceLabel('set_barrel'), 'set_barrel', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_barrel')),
+            _SmallCareButton('Бак', _priceLabel('set_tank'), 'set_tank', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_tank')),
           ]),
           if (tree.currentContainer != null) ...[
             const SizedBox(height: 4),
@@ -930,10 +997,10 @@ class ActionPanel extends StatelessWidget {
           ],
           const SizedBox(height: 12), _SectionHeader('🐦 ПТИЦЕФЕРМА'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Сын', _priceLabel('set_nest_son'), 'set_nest_son', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Отец', _priceLabel('set_nest_father'), 'set_nest_father', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Дед', _priceLabel('set_nest_grandfather'), 'set_nest_grandfather', (a) { onAction(a); audioService.playClick(); }),
-            _SmallCareButton('Старейшина', _priceLabel('set_nest_elder'), 'set_nest_elder', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Сын', _priceLabel('set_nest_son'), 'set_nest_son', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_nest_son')),
+            _SmallCareButton('Отец', _priceLabel('set_nest_father'), 'set_nest_father', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_nest_father')),
+            _SmallCareButton('Дед', _priceLabel('set_nest_grandfather'), 'set_nest_grandfather', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_nest_grandfather')),
+            _SmallCareButton('Старейшина', _priceLabel('set_nest_elder'), 'set_nest_elder', (a) { onAction(a); audioService.playClick(); }, enabled: _isActionEnabled('set_nest_elder')),
           ]),
           if (tree.currentNest != null) ...[
             const SizedBox(height: 4),
@@ -968,15 +1035,16 @@ class _SectionHeader extends StatelessWidget {
 class _SmallCareButton extends StatelessWidget {
   final String label, price, careCode;
   final void Function(String) onAction;
-  const _SmallCareButton(this.label, this.price, this.careCode, this.onAction);
+  final bool enabled;
+  const _SmallCareButton(this.label, this.price, this.careCode, this.onAction, {this.enabled = true});
 
   @override Widget build(BuildContext context) {
     final btn = SizedBox(width: 70, child: Material(color: Colors.transparent, child: InkWell(
-      onTap: () => onAction(careCode),
+      onTap: enabled ? () => onAction(careCode) : null,
       borderRadius: BorderRadius.circular(12),
-      child: Ink(padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: price == 'Из запаса' ? const Color(0xFF1B5E20) : const Color(0xFF1A2A1A), border: Border.all(color: const Color(0xFF7CFC6E).withOpacity(0.5))), child: Column(children: [
-        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.text)),
-        const SizedBox(height: 2), Text(price, textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: AppTheme.gold)),
+      child: Ink(padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: enabled ? (price.startsWith('Из запаса') ? const Color(0xFF1B5E20) : const Color(0xFF1A2A1A)) : const Color(0xFF111214), border: Border.all(color: const Color(0xFF7CFC6E).withOpacity(0.5))), child: Column(children: [
+        Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: enabled ? AppTheme.text : AppTheme.muted)),
+        const SizedBox(height: 2), Text(price, textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: enabled ? AppTheme.gold : AppTheme.muted)),
       ])),
     )));
     final tooltip = switch (careCode) {
@@ -1297,6 +1365,8 @@ class _CollectionCard extends StatelessWidget {
             FractionallySizedBox(widthFactor: progress, child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [tree.stats.color.withOpacity(0.5), tree.stats.color])))),
           ]))),
           const SizedBox(height: 4),
+          Text('Доход: ${tree.stats.income.toStringAsFixed(0)} WLNT', style: const TextStyle(fontSize: 10, color: AppTheme.muted)),
+          const SizedBox(height: 4),
           Text('День: ${tree.seasonDay}/${GameEngine.seasonLength}  |  Перерождений: ${tree.rebirthsLeft}/${tree.maxRebirths}', style: const TextStyle(fontSize: 10, color: AppTheme.muted)),
         ])),
       ]))),
@@ -1309,8 +1379,38 @@ class _CollectionCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class WalletScreen extends StatelessWidget {
-  const WalletScreen({super.key, required this.solBalance, required this.wlntBalance, required this.userEmail, required this.myReferralCode, required this.themeMode, required this.onToggleTheme, required this.onLogout, required this.onDepositSol, required this.onWithdrawSol, required this.onDepositWlnt, required this.onWithdrawWlnt, required this.audioService});
-  final double solBalance, wlntBalance; final String userEmail, myReferralCode; final ThemeMode themeMode; final VoidCallback onToggleTheme, onLogout; final ValueChanged<double> onDepositSol, onWithdrawSol, onDepositWlnt, onWithdrawWlnt; final AudioService audioService;
+  const WalletScreen({
+    super.key,
+    required this.solBalance,
+    required this.wlntBalance,
+    required this.userEmail,
+    required this.myReferralCode,
+    required this.themeMode,
+    required this.onToggleTheme,
+    required this.onLogout,
+    required this.onDepositSol,
+    required this.onWithdrawSol,
+    required this.onDepositWlnt,
+    required this.onWithdrawWlnt,
+    required this.onConvertSolToWlnt,
+    required this.onConvertWlntToSol,
+    required this.audioService,
+  });
+
+  final double solBalance;
+  final double wlntBalance;
+  final String userEmail;
+  final String myReferralCode;
+  final ThemeMode themeMode;
+  final VoidCallback onToggleTheme;
+  final VoidCallback onLogout;
+  final ValueChanged<double> onDepositSol;
+  final ValueChanged<double> onWithdrawSol;
+  final ValueChanged<double> onDepositWlnt;
+  final ValueChanged<double> onWithdrawWlnt;
+  final ValueChanged<double> onConvertSolToWlnt;
+  final ValueChanged<double> onConvertWlntToSol;
+  final AudioService audioService;
 
   Future<void> _amountDialog(BuildContext context, String title, String label, ValueChanged<double> onConfirm) async {
     final ctrl = TextEditingController(); final formKey = GlobalKey<FormState>();
@@ -1338,6 +1438,28 @@ class WalletScreen extends StatelessWidget {
       Expanded(child: _ActionChip(label: 'Пополнить', icon: Icons.add_circle_outline, onTap: () { audioService.playClick(); _amountDialog(context, 'Пополнить SOL', 'Сумма SOL', onDepositSol); })),
       const SizedBox(width: 12),
       Expanded(child: _ActionChip(label: 'Вывести', icon: Icons.arrow_circle_up_outlined, onTap: () { audioService.playClick(); _amountDialog(context, 'Вывести SOL', 'Сумма SOL', (a) { if (a <= solBalance) onWithdrawSol(a); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Недостаточно средств'))); }); })),
+    ]),
+    const SizedBox(height: 16),
+    Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.panelBorder),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+        Text('Обмен валют', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppTheme.text)),
+        SizedBox(height: 6),
+        Text('Курс обмена: 1 SOL = 1000 WLNT', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
+        SizedBox(height: 4),
+        Text('Обменяйте SOL на WLNT для покупки ресурсов и редких улучшений.', style: TextStyle(fontSize: 11, color: AppTheme.muted)),
+      ]),
+    ),
+    const SizedBox(height: 16),
+    Row(children: [
+      Expanded(child: _ActionChip(label: 'SOL → WLNT', icon: Icons.swap_horiz, onTap: () { audioService.playClick(); _amountDialog(context, 'Обменять SOL на WLNT', 'Сумма SOL', onConvertSolToWlnt); })),
+      const SizedBox(width: 12),
+      Expanded(child: _ActionChip(label: 'WLNT → SOL', icon: Icons.swap_horiz, onTap: () { audioService.playClick(); _amountDialog(context, 'Обменять WLNT на SOL', 'Сумма WLNT', onConvertWlntToSol); })),
     ]),
     const SizedBox(height: 32),
     _BalanceCard(icon: Icons.eco, label: 'Walnut Token (WLNT)', balance: _fmt(wlntBalance), color: AppTheme.gold),
