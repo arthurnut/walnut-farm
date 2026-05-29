@@ -87,13 +87,14 @@ class GameEngine {
     final diffMinutes = now.difference(lastRealtimeTick!).inMinutes;
     if (diffMinutes > 0) {
       lastRealtimeTick = now;
-    for (int i = 0; i < trees.length; i++) {
-      final tree = trees[i];
-      if (!tree.isPlanted || tree.status != TreeStatus.growth) continue;
-      final lossPerMinute = tree.waterConsumptionRate / 24.0 / 60.0;
-      final totalLoss = lossPerMinute * diffMinutes;
-      if (totalLoss > 0) {
-        trees[i] = tree.copyWith(currentWater: (tree.currentWater - totalLoss).clamp(0.0, 100.0));
+      for (int i = 0; i < trees.length; i++) {
+        final tree = trees[i];
+        if (!tree.isPlanted || tree.status != TreeStatus.growth) continue;
+        final lossPerMinute = tree.waterConsumptionRate / 24.0 / 60.0;
+        final totalLoss = lossPerMinute * diffMinutes;
+        if (totalLoss > 0) {
+          trees[i] = tree.copyWith(currentWater: (tree.currentWater - totalLoss).clamp(0.0, 100.0));
+        }
       }
     }
   }
