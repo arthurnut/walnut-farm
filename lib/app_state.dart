@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import 'engine/game_engine.dart';
@@ -167,7 +169,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> startRealtimeTick() async {
-    engine._lastRealtimeTick = DateTime.now();
+    engine.lastRealtimeTick = DateTime.now();
   }
 
   void dispose() {

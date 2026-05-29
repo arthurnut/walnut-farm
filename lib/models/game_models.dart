@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 
+import '../engine/game_engine.dart';
+
 enum TreeRarity { common, uncommon, rare, epic, legendary, mysterious }
 
 class RarityStats {
@@ -81,6 +83,14 @@ const emotionBonuses = <String, double>{
 };
 
 enum TreeStatus { growth, rest, dead }
+
+extension TreeStatusX on TreeStatus {
+  String get label => switch (this) {
+    TreeStatus.growth => 'Рост',
+    TreeStatus.rest => 'Отдых',
+    TreeStatus.dead => 'Мёртво',
+  };
+}
 
 enum WeatherType { thunderstorm, heatwave, forestFire, flood, fog, calm, cloudy }
 

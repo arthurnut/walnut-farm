@@ -269,7 +269,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
       body: Stack(
         children: [
           IndexedStack(index: _tab, children: [
-            FarmScreen(game: game, selectedId: _selectedTreeId, onDaySkip: _daySkip, onSelectTree: _selectTree, onAction: _treeAction, audioService: _audioService),
+            FarmScreen(game: game, selectedId: _selectedTreeId, onDaySkip: _daySkip, onSelectTree: _selectTree, onAction: (treeId, action) { _treeAction(treeId, action); return true; }, audioService: _audioService),
             MarketScreen(game: game, userEmail: _appState.userEmail, onBuyTree: _buyTree, onCancelTreeSell: _cancelSell, onBuyResource: _buyResource, onCancelResourceSell: _cancelResourceSell, onSellResource: _sellResource, audioService: _audioService),
             LuckyScreen(game: game, onBurned: (id) async { await _appState.burnTree(id); _audioService.playClick(); }, audioService: _audioService),
             CollectionScreen(game: game, userEmail: _appState.userEmail, onSelectTree: _selectTree, onPlant: (id) async { if (await _appState.plantTree(id)) setState(() {}); _audioService.playClick(); }, onSell: _sellTree, onCancelSell: _cancelSell, leaderboard: game.leaderboard, onHarvest: (id) async { await _appState.harvestTree(id); _audioService.playClick(); setState(() {}); }, audioService: _audioService),
@@ -745,7 +745,7 @@ class ActionPanel extends StatelessWidget {
   final TreeModel tree; final GameEngine game; final void Function(String action) onAction; final VoidCallback onClose; final AudioService audioService;
 
   String _priceLabel(String careCode) {
-    final resourceKey = GameEngine._resourceActionMap[careCode];
+    final resourceKey = resourceActionMap[careCode];
     if (resourceKey != null && (game.inventory[resourceKey] ?? 0) > 0) return 'Из запаса';
     return switch (careCode) {
       'water_bucket' => '200 WLNT', 'water_barrel' => '490 WLNT', 'water_tank' => '780 WLNT',
@@ -1276,5 +1276,166 @@ class LeaderboardScreen extends StatelessWidget {
         ])),
       );
     });
+  }
+}
+
+class PhoneFrame extends StatelessWidget {
+  const PhoneFrame({super.key, required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 450,
+      height: 900,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(40),
+        border: Border.all(color: Colors.black87, width: 8),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 30, spreadRadius: 4)],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(35),
+        child: child,
+      ),
+    );
+  }
+}
+
+class AuthScreen2 extends StatefulWidget {
+  const AuthScreen2({super.key, required this.onLogin});
+  final void Function(String email, String referralCode) onLogin;
+  @override
+  State<AuthScreen2> createState() => _AuthScreen2State();
+}
+
+class _AuthScreen2State extends State<AuthScreen2> {
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
+  bool _obscure = true;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _refCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState!.validate()) {
+      widget.onLogin(_emailCtrl.text.trim(), _refCtrl.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ShaderMask(
+                    shaderCallback: (b) => LinearGradient(
+                      colors: [const Color(0xFF7CFC6E), AppTheme.gold],
+                    ).createShader(b),
+                    child: const Text(
+                      '🌳 WALNUT FARM',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Войдите, чтобы начать игру',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 14),
+                  ),
+                  const SizedBox(height: 32),
+                  TextFormField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: AppTheme.text),
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: const TextStyle(color: AppTheme.muted),
+                      prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.muted),
+                      filled: true,
+                      fillColor: AppTheme.panel,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (v) => v?.isEmpty ?? true ? 'Email не может быть пустым' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passCtrl,
+                    obscureText: _obscure,
+                    style: const TextStyle(color: AppTheme.text),
+                    decoration: InputDecoration(
+                      labelText: 'Пароль',
+                      labelStyle: const TextStyle(color: AppTheme.muted),
+                      prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.muted),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility,
+                            color: AppTheme.muted),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
+                      filled: true,
+                      fillColor: AppTheme.panel,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (v) => v?.isEmpty ?? true ? 'Пароль не может быть пустым' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _refCtrl,
+                    style: const TextStyle(color: AppTheme.text),
+                    decoration: InputDecoration(
+                      labelText: 'Реферальный код (опционально)',
+                      labelStyle: const TextStyle(color: AppTheme.muted),
+                      prefixIcon: const Icon(Icons.card_giftcard, color: AppTheme.muted),
+                      filled: true,
+                      fillColor: AppTheme.panel,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7CFC6E),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _submit,
+                      child: const Text(
+                        'Войти',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

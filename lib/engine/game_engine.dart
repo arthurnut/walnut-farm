@@ -40,7 +40,7 @@ class GameEngine {
   Map<String, int> inventory;
   List<ResourceLot> resourceLots;
   List<LeaderboardEntry> leaderboard;
-  DateTime? _lastRealtimeTick;
+  DateTime? lastRealtimeTick;
 
   final List<void Function(String)> _incomeListeners = [];
   void addIncomeListener(void Function(String) listener) => _incomeListeners.add(listener);
@@ -80,13 +80,13 @@ class GameEngine {
 
   void tickRealtime(Duration elapsed) {
     final now = DateTime.now();
-    if (_lastRealtimeTick == null) {
-      _lastRealtimeTick = now;
+    if (lastRealtimeTick == null) {
+      lastRealtimeTick = now;
       return;
     }
-    final diffMinutes = now.difference(_lastRealtimeTick!).inMinutes;
-    if (diffMinutes <= 0) return;
-    _lastRealtimeTick = now;
+    final diffMinutes = now.difference(lastRealtimeTick!).inMinutes;
+    if (diffMinutes > 0) {
+      lastRealtimeTick = now;
     for (int i = 0; i < trees.length; i++) {
       final tree = trees[i];
       if (!tree.isPlanted || tree.status != TreeStatus.growth) continue;
