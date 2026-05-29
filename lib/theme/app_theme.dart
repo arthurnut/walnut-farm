@@ -22,6 +22,7 @@ abstract final class AppTheme {
     useMaterial3: true,
     brightness: Brightness.light,
     scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+    fontFamily: 'Arial',
     colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4CAF50), brightness: Brightness.light),
   );
 
@@ -29,6 +30,7 @@ abstract final class AppTheme {
     useMaterial3: true,
     brightness: Brightness.dark,
     scaffoldBackgroundColor: bg,
+    fontFamily: 'Arial',
     colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4CAF50), brightness: Brightness.dark),
   );
 }

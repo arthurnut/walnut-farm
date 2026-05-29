@@ -690,7 +690,8 @@ class _NftTreeCardState extends State<NftTreeCard> with TickerProviderStateMixin
   late AnimationController _actionAnimCtrl;
   ActionType? _currentActionType;
 
-  @override void initState() {
+  @override
+  void initState() {
     super.initState();
     _glowController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
     if (widget.tree.stats.glowIntensity > 0) {
@@ -708,7 +709,9 @@ class _NftTreeCardState extends State<NftTreeCard> with TickerProviderStateMixin
       if (status == AnimationStatus.dismissed) {
         _currentActionType = null;
         if (mounted) {
-          setState(() {});
+          setState(() {
+            // update animation state when dismissed
+          });
         }
       }
     });
@@ -932,7 +935,9 @@ class ActionPanel extends StatelessWidget {
     final resourceKey = resourceActionMap[careCode];
     if (resourceKey != null) {
       final count = game.inventory[resourceKey] ?? 0;
-      if (count > 0) return 'Из запаса ($count)';
+      if (count > 0) {
+        return 'Из запаса ($count)';
+      }
     }
     return switch (careCode) {
       'water_bucket' => '200 WLNT', 'water_barrel' => '490 WLNT', 'water_tank' => '780 WLNT',
@@ -947,7 +952,9 @@ class ActionPanel extends StatelessWidget {
 
   bool _isActionEnabled(String careCode) {
     final resourceKey = resourceActionMap[careCode];
-    if (resourceKey != null) return (game.inventory[resourceKey] ?? 0) > 0;
+    if (resourceKey != null) {
+      return (game.inventory[resourceKey] ?? 0) > 0;
+    }
     final price = switch (careCode) {
       'water_bucket' => 200,
       'water_barrel' => 490,
@@ -1056,9 +1063,8 @@ class _ProgressIndicatorRow extends StatelessWidget {
 
   @override Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      return Row(children: [
-        SizedBox(
-          width: min(120, constraints.maxWidth * 0.35),
+      return Row(mainAxisSize: MainAxisSize.max, children: [
+        Flexible(
           child: Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.muted), overflow: TextOverflow.ellipsis, maxLines: 1),
         ),
         const SizedBox(width: 6),
