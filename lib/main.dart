@@ -1,865 +1,14 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:audioplayers/audioplayers.dart';
+
 import 'package:flutter/material.dart';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// РЕДКОСТИ, ЭМОЦИИ И СТАТЫ
-// ═══════════════════════════════════════════════════════════════════════════════
-
-enum TreeRarity { common, uncommon, rare, epic, legendary, mysterious }
-
-class RarityStats {
-  const RarityStats({
-    required this.color,
-    required this.emoji,
-    required this.maxRebirths,
-    required this.waterConsumption,
-    required this.income,
-    required this.caterpillarIntervalDays,
-    required this.baseWaterDays,
-    required this.baseBirdDays,
-    required this.glowIntensity,
-  });
-  final Color color;
-  final String emoji;
-  final int maxRebirths;
-  final double waterConsumption;
-  final int income;
-  final int caterpillarIntervalDays;
-  final double baseWaterDays;
-  final double baseBirdDays;
-  final double glowIntensity;
-}
-
-const rarityTable = <TreeRarity, RarityStats>{
-  TreeRarity.common: RarityStats(
-    color: Color(0xFF9E9E9E), emoji: '🧤', maxRebirths: 3,
-    waterConsumption: 4, income: 10000, caterpillarIntervalDays: 5,
-    baseWaterDays: 3, baseBirdDays: 6, glowIntensity: 0.0,
-  ),
-  TreeRarity.uncommon: RarityStats(
-    color: Color(0xFF39FF14), emoji: '🕶️', maxRebirths: 5,
-    waterConsumption: 5, income: 16000, caterpillarIntervalDays: 4,
-    baseWaterDays: 2, baseBirdDays: 5, glowIntensity: 0.15,
-  ),
-  TreeRarity.rare: RarityStats(
-    color: Color(0xFF00B4FF), emoji: '🧣', maxRebirths: 10,
-    waterConsumption: 6, income: 25000, caterpillarIntervalDays: 3,
-    baseWaterDays: 1, baseBirdDays: 4, glowIntensity: 0.3,
-  ),
-  TreeRarity.epic: RarityStats(
-    color: Color(0xFFB026FF), emoji: '🎖️', maxRebirths: 15,
-    waterConsumption: 7, income: 50000, caterpillarIntervalDays: 2,
-    baseWaterDays: 0.5, baseBirdDays: 3, glowIntensity: 0.6,
-  ),
-  TreeRarity.legendary: RarityStats(
-    color: Color(0xFFFF6B00), emoji: '👑', maxRebirths: 20,
-    waterConsumption: 8, income: 80000, caterpillarIntervalDays: 2,
-    baseWaterDays: 0.25, baseBirdDays: 2, glowIntensity: 0.8,
-  ),
-  TreeRarity.mysterious: RarityStats(
-    color: Color(0xFFFF1744), emoji: '🔮', maxRebirths: 30,
-    waterConsumption: 10, income: 300000, caterpillarIntervalDays: 1,
-    baseWaterDays: 0.125, baseBirdDays: 1, glowIntensity: 1.0,
-  ),
-};
-
-extension TreeRarityX on TreeRarity {
-  RarityStats get stats => rarityTable[this]!;
-  String get label => switch (this) {
-    TreeRarity.common => 'Common',
-    TreeRarity.uncommon => 'Uncommon',
-    TreeRarity.rare => 'Rare',
-    TreeRarity.epic => 'Epic',
-    TreeRarity.legendary => 'Legendary',
-    TreeRarity.mysterious => 'Mysterious',
-  };
-}
-
-const emotionBonuses = <String, double>{
-  'Surprised': 0.15,
-  'Without emotion': 0.0,
-  'Indifferent': 0.10,
-  'Sad': 0.05,
-  'Happy': 0.20,
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// СТАТУС · ПОГОДА
-// ═══════════════════════════════════════════════════════════════════════════════
-
-enum TreeStatus { growth, rest, dead }
-
-enum WeatherType { thunderstorm, heatwave, forestFire, flood, fog, calm, cloudy }
-
-extension WeatherTypeX on WeatherType {
-  String get label => switch (this) {
-    WeatherType.thunderstorm => 'Дождь с грозой',
-    WeatherType.heatwave => 'Засуха',
-    WeatherType.forestFire => 'Лесной пожар',
-    WeatherType.flood => 'Наводнение',
-    WeatherType.fog => 'Туман',
-    WeatherType.calm => 'Облачно с прояснениями',
-    WeatherType.cloudy => 'Облачно',
-  };
-  double get waterMultiplier => switch (this) {
-    WeatherType.thunderstorm => 0.5,
-    WeatherType.heatwave => 2.0,
-    WeatherType.forestFire => 10.0,
-    WeatherType.flood => 0.2,
-    WeatherType.fog => 0.5,
-    WeatherType.calm => 1.0,
-    WeatherType.cloudy => 1.0,
-  };
-  IconData get icon => switch (this) {
-    WeatherType.thunderstorm => Icons.thunderstorm_rounded,
-    WeatherType.heatwave => Icons.thermostat_rounded,
-    WeatherType.forestFire => Icons.local_fire_department_rounded,
-    WeatherType.flood => Icons.flood_rounded,
-    WeatherType.fog => Icons.blur_on_rounded,
-    WeatherType.calm => Icons.wb_sunny_rounded,
-    WeatherType.cloudy => Icons.cloud_rounded,
-  };
-  Color get accent => switch (this) {
-    WeatherType.thunderstorm => const Color(0xFF7C4DFF),
-    WeatherType.heatwave => const Color(0xFFFF9100),
-    WeatherType.forestFire => const Color(0xFFFF1744),
-    WeatherType.flood => const Color(0xFF00E5FF),
-    WeatherType.fog => const Color(0xFFB0BEC5),
-    WeatherType.calm => const Color(0xFFFFD740),
-    WeatherType.cloudy => const Color(0xFF90A4AE),
-  };
-  bool get isCritical => this == WeatherType.forestFire;
-}
-
-WeatherType weatherForCycleDay(int cycleDay) {
-  final index = ((cycleDay - 1) % 7) + 1;
-  return switch (index) {
-    1 => WeatherType.thunderstorm,
-    2 => WeatherType.heatwave,
-    3 => WeatherType.forestFire,
-    4 => WeatherType.flood,
-    5 => WeatherType.fog,
-    6 => WeatherType.calm,
-    7 => WeatherType.cloudy,
-    _ => WeatherType.calm,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// МОДЕЛЬ ДЕРЕВА
-// ═══════════════════════════════════════════════════════════════════════════════
-
-class TreeModel {
-  const TreeModel({
-    required this.id,
-    required this.imageUrl,
-    required this.name,
-    required this.rarity,
-    required this.maxRebirths,
-    required this.rebirthsLeft,
-    required this.currentWater,
-    required this.seasonDay,
-    required this.caterpillars,
-    required this.status,
-    this.isPlanted = true,
-    this.emotion = 'Without emotion',
-    this.owner = '',
-    this.forSale = false,
-    this.price = 0.0,
-    this.plantedAtGameDay = 1,
-    this.autoWaterDays = 0,
-    this.autoWaterAmount = 0.0,
-    this.currentContainer,
-    this.waterCollectionProgress = 0.0,
-    this.currentNest,
-    this.birdGrowthProgress = 0.0,
-  });
-  final String id, imageUrl, name, emotion, owner;
-  final TreeRarity rarity;
-  final int maxRebirths, rebirthsLeft;
-  final double currentWater;
-  final int seasonDay, caterpillars;
-  final TreeStatus status;
-  final bool isPlanted, forSale;
-  final double price;
-  final int plantedAtGameDay;
-  final int autoWaterDays;
-  final double autoWaterAmount;
-  final String? currentContainer;
-  final double waterCollectionProgress;
-  final String? currentNest;
-  final double birdGrowthProgress;
-
-  RarityStats get stats => rarity.stats;
-  double get emotionBonus => emotionBonuses[emotion] ?? 0.0;
-  double get waterConsumptionRate =>
-      stats.waterConsumption * (status == TreeStatus.growth ? 1.0 : 0.0);
-  double get waterPercent => (currentWater / 100.0).clamp(0.0, 1.0);
-
-  int get hoursLeft {
-    if (status == TreeStatus.growth) {
-      final targetDay = GameEngine.seasonLength;
-      final daysRemaining = targetDay - seasonDay;
-      return daysRemaining * 24;
-    } else if (status == TreeStatus.rest) {
-      return (GameEngine.seasonLength - seasonDay) * 24;
-    }
-    return 0;
-  }
-
-  String get timeLeftFormatted {
-    final hrs = hoursLeft;
-    final days = hrs ~/ 24;
-    final remainingHrs = hrs % 24;
-    return '${days}д ${remainingHrs}ч 0м';
-  }
-
-  String get growthStageEmoji {
-    if (status != TreeStatus.growth) return '';
-    final day = seasonDay;
-    if (day <= 10) return '🌱';
-    if (day <= 20) return '🌿';
-    return '🌳';
-  }
-
-  bool get canHarvest => status == TreeStatus.growth && seasonDay >= GameEngine.seasonLength && currentWater >= 100.0 && caterpillars == 0;
-
-  TreeModel copyWith({
-    int? rebirthsLeft, double? currentWater, int? seasonDay,
-    int? caterpillars, TreeStatus? status, bool? isPlanted,
-    String? emotion, String? owner, bool? forSale, double? price,
-    int? plantedAtGameDay, int? autoWaterDays, double? autoWaterAmount,
-    String? currentContainer, double? waterCollectionProgress,
-    String? currentNest, double? birdGrowthProgress,
-  }) {
-    return TreeModel(
-      id: id, imageUrl: imageUrl, name: name, rarity: rarity,
-      maxRebirths: maxRebirths,
-      rebirthsLeft: rebirthsLeft ?? this.rebirthsLeft,
-      currentWater: currentWater ?? this.currentWater,
-      seasonDay: seasonDay ?? this.seasonDay,
-      caterpillars: caterpillars ?? this.caterpillars,
-      status: status ?? this.status,
-      isPlanted: isPlanted ?? this.isPlanted,
-      emotion: emotion ?? this.emotion,
-      owner: owner ?? this.owner,
-      forSale: forSale ?? this.forSale,
-      price: price ?? this.price,
-      plantedAtGameDay: plantedAtGameDay ?? this.plantedAtGameDay,
-      autoWaterDays: autoWaterDays ?? this.autoWaterDays,
-      autoWaterAmount: autoWaterAmount ?? this.autoWaterAmount,
-      currentContainer: currentContainer ?? this.currentContainer,
-      waterCollectionProgress: waterCollectionProgress ?? this.waterCollectionProgress,
-      currentNest: currentNest ?? this.currentNest,
-      birdGrowthProgress: birdGrowthProgress ?? this.birdGrowthProgress,
-    );
-  }
-}
-
-extension TreeStatusX on TreeStatus {
-  String get label => switch (this) {
-    TreeStatus.growth => 'Рост',
-    TreeStatus.rest => 'Отдых',
-    TreeStatus.dead => 'Мёртвое',
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// РЕСУРСНЫЙ ЛОТ
-// ═══════════════════════════════════════════════════════════════════════════════
-
-class ResourceLot {
-  final String id;
-  final String sellerEmail;
-  final String resourceType;
-  final int quantity;
-  final double pricePerUnit;
-
-  const ResourceLot({
-    required this.id,
-    required this.sellerEmail,
-    required this.resourceType,
-    required this.quantity,
-    required this.pricePerUnit,
-  });
-
-  double get totalPrice => quantity * pricePerUnit;
-}
-
-class LeaderboardEntry {
-  String name;
-  double wlntBalance;
-  bool isPlayer;
-
-  LeaderboardEntry({
-    required this.name,
-    required this.wlntBalance,
-    this.isPlayer = false,
-  });
-}
-
-enum ActionType { water, fertilize, bird }
-class ActionEvent {
-  final String treeId;
-  final ActionType type;
-  const ActionEvent({required this.treeId, required this.type});
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ИГРОВОЙ ДВИЖОК
-// ═══════════════════════════════════════════════════════════════════════════════
-
-class GameEngine {
-  GameEngine({
-    required this.gameDay,
-    required this.wlntBalance,
-    required this.trees,
-    required this.currentWeather,
-    Map<String, int>? inventory,
-    List<ResourceLot>? resourceLots,
-    List<LeaderboardEntry>? leaderboard,
-  })  : inventory = inventory ?? {'water_unit': 0, 'fertilizer_unit': 0, 'bird_unit': 0},
-        resourceLots = resourceLots ?? [],
-        leaderboard = leaderboard ?? [];
-
-  static const seasonLength = 30;
-  int gameDay;
-  double wlntBalance;
-  List<TreeModel> trees;
-  WeatherType currentWeather;
-  Map<String, int> inventory;
-  List<ResourceLot> resourceLots;
-  List<LeaderboardEntry> leaderboard;
-  DateTime? _lastRealtimeTick;
-
-  final List<void Function(String)> _incomeListeners = [];
-  void addIncomeListener(void Function(String) listener) => _incomeListeners.add(listener);
-  void removeIncomeListener(void Function(String) listener) => _incomeListeners.remove(listener);
-  void _notifyIncome(String message) {
-    final listeners = List.from(_incomeListeners);
-    for (final l in listeners) {
-      l(message);
-    }
-  }
-
-  final ValueNotifier<ActionEvent?> actionEvent = ValueNotifier<ActionEvent?>(null);
-
-  void _triggerActionEvent(String treeId, ActionType type) {
-    actionEvent.value = ActionEvent(treeId: treeId, type: type);
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      if (actionEvent.value?.treeId == treeId) {
-        actionEvent.value = null;
-      }
-    });
-  }
-
-  void _rewardTopPlayers() {
-    if (leaderboard.isEmpty) return;
-    final sorted = List<LeaderboardEntry>.from(leaderboard)
-      ..sort((a, b) => b.wlntBalance.compareTo(a.wlntBalance));
-    final prizes = [3, 2, 1];
-    for (int i = 0; i < min(3, sorted.length); i++) {
-      final entry = sorted[i];
-      if (entry.isPlayer) {
-        inventory['fertilizer_unit'] = (inventory['fertilizer_unit'] ?? 0) + prizes[i];
-        _notifyIncome('🏆 Вы заняли ${i + 1} место! Получено ${prizes[i]} удобрений.');
-      }
-    }
-  }
-
-  void tickRealtime(Duration elapsed) {
-    final now = DateTime.now();
-    if (_lastRealtimeTick == null) { _lastRealtimeTick = now; return; }
-    final diffMinutes = now.difference(_lastRealtimeTick!).inMinutes;
-    if (diffMinutes <= 0) return;
-    _lastRealtimeTick = now;
-    for (int i = 0; i < trees.length; i++) {
-      final tree = trees[i];
-      if (!tree.isPlanted || tree.status != TreeStatus.growth) continue;
-      final lossPerMinute = tree.waterConsumptionRate / 24.0 / 60.0;
-      final totalLoss = lossPerMinute * diffMinutes;
-      if (totalLoss > 0) {
-        trees[i] = tree.copyWith(currentWater: (tree.currentWater - totalLoss).clamp(0.0, 100.0));
-      }
-    }
-  }
-
-  void _applyAutoWater() {
-    for (int i = 0; i < trees.length; i++) {
-      final tree = trees[i];
-      if (tree.autoWaterDays > 0) {
-        trees[i] = tree.copyWith(
-          currentWater: (tree.currentWater + tree.autoWaterAmount).clamp(0.0, 100.0),
-          autoWaterDays: tree.autoWaterDays - 1,
-        );
-      }
-    }
-  }
-
-  static const containerMultiplier = <String, double>{
-    'bucket': 1.0, 'barrel': 2.0, 'tank': 4.0,
-  };
-  static const nestBirdCount = <String, int>{
-    'son': 1, 'father': 5, 'grandfather': 10, 'elder': 20,
-  };
-
-  TreeModel _advanceGrowth(TreeModel tree, WeatherType weather) {
-    if (!tree.isPlanted) return tree;
-    var water = tree.currentWater;
-    var day = tree.seasonDay;
-    var cats = tree.caterpillars;
-    water = (water - tree.stats.waterConsumption * weather.waterMultiplier).clamp(0.0, 100.0);
-    if (gameDay % tree.stats.caterpillarIntervalDays == 0) cats++;
-    if (weather == WeatherType.fog) cats *= 2;
-    if (day < seasonLength && water > 0) {
-      day++;
-    } else if (day >= seasonLength) {
-      day = seasonLength;
-    }
-    return tree.copyWith(currentWater: water, seasonDay: day, caterpillars: cats);
-  }
-
-  TreeModel _advanceRest(TreeModel tree) {
-    if (!tree.isPlanted) return tree;
-    inventory['water_unit'] = (inventory['water_unit'] ?? 0) + 1;
-    inventory['fertilizer_unit'] = (inventory['fertilizer_unit'] ?? 0) + 1;
-
-    double wProg = tree.waterCollectionProgress;
-    double bProg = tree.birdGrowthProgress;
-    int addedWaters = 0, addedBirds = 0;
-
-    if (tree.currentContainer != null && tree.currentContainer != 'none') {
-      final base = tree.stats.baseWaterDays;
-      final mult = containerMultiplier[tree.currentContainer] ?? 1.0;
-      final timeDays = base * mult;
-      if (timeDays > 0) {
-        wProg += 1.0 / timeDays;
-        while (wProg >= 1.0) { addedWaters++; wProg -= 1.0; }
-      }
-    }
-    if (tree.currentNest != null) {
-      final baseBird = tree.stats.baseBirdDays;
-      if (baseBird > 0) {
-        bProg += 1.0 / baseBird;
-        while (bProg >= 1.0) {
-          addedBirds += nestBirdCount[tree.currentNest] ?? 0;
-          bProg -= 1.0;
-        }
-      }
-    }
-    inventory['water_unit'] = (inventory['water_unit'] ?? 0) + addedWaters;
-    inventory['bird_unit'] = (inventory['bird_unit'] ?? 0) + addedBirds;
-
-    var day = tree.seasonDay + 1;
-    var left = tree.rebirthsLeft;
-    if (day > seasonLength) {
-      left--;
-      if (left > 0) {
-        return tree.copyWith(
-          seasonDay: 1, rebirthsLeft: left, status: TreeStatus.growth,
-          isPlanted: false, currentWater: 100.0, plantedAtGameDay: gameDay,
-          waterCollectionProgress: wProg, birdGrowthProgress: bProg,
-        );
-      } else {
-        return tree.copyWith(
-          seasonDay: 1, rebirthsLeft: 0, status: TreeStatus.dead,
-          isPlanted: false, plantedAtGameDay: gameDay,
-          waterCollectionProgress: wProg, birdGrowthProgress: bProg,
-        );
-      }
-    }
-    return tree.copyWith(
-      seasonDay: day, rebirthsLeft: left,
-      waterCollectionProgress: wProg, birdGrowthProgress: bProg,
-    );
-  }
-
-  TreeModel _advanceTree(TreeModel tree) {
-    if (tree.status == TreeStatus.dead || !tree.isPlanted) return tree;
-    final weather = weatherForCycleDay(tree.seasonDay);
-    return switch (tree.status) {
-      TreeStatus.growth => _advanceGrowth(tree, weather),
-      TreeStatus.rest => _advanceRest(tree),
-      TreeStatus.dead => tree,
-    };
-  }
-
-  void nextDay() {
-    gameDay++;
-    currentWeather = weatherForCycleDay(gameDay);
-    _applyAutoWater();
-    trees = trees.map(_advanceTree).toList();
-    final playerEntry = leaderboard.where((e) => e.isPlayer).firstOrNull;
-    if (playerEntry != null) {
-      playerEntry.wlntBalance = wlntBalance;
-    }
-    if (gameDay % 30 == 0) {
-      _rewardTopPlayers();
-    }
-  }
-
-  static const _resourceActionMap = <String, String>{
-    'water_bucket': 'water_unit',
-    'water_barrel': 'water_unit',
-    'water_tank': 'water_unit',
-    'auto_water_basic': 'water_unit',
-    'auto_water_cistern': 'water_unit',
-    'fertilize_normal': 'fertilizer_unit',
-    'fertilize_super': 'fertilizer_unit',
-    'woodpecker_1': 'bird_unit',
-    'woodpecker_5': 'bird_unit',
-    'woodpecker_10': 'bird_unit',
-    'woodpecker_all': 'bird_unit',
-  };
-
-  bool applyCare(String treeId, String careCode) {
-    final idx = trees.indexWhere((t) => t.id == treeId);
-    if (idx == -1) return false;
-    final tree = trees[idx];
-    if (!tree.isPlanted) return false;
-
-    final resourceKey = _resourceActionMap[careCode];
-    double price = 0;
-    bool resourceUsed = false;
-
-    if (resourceKey != null && (inventory[resourceKey] ?? 0) > 0) {
-      resourceUsed = true;
-    } else {
-      switch (careCode) {
-        case 'water_bucket': price = 200; break;
-        case 'water_barrel': price = 490; break;
-        case 'water_tank': price = 780; break;
-        case 'auto_water_basic': price = 2100; break;
-        case 'auto_water_cistern': price = 5000; break;
-        case 'fertilize_normal': price = 1000; break;
-        case 'fertilize_super': price = 3000; break;
-        case 'woodpecker_1': price = 200; break;
-        case 'woodpecker_5': price = 950; break;
-        case 'woodpecker_10': price = 1900; break;
-        case 'woodpecker_all': price = 5000; break;
-        case 'set_bucket': price = 500; break;
-        case 'set_barrel': price = 1500; break;
-        case 'set_tank': price = 4000; break;
-        case 'set_nest_son': price = 500; break;
-        case 'set_nest_father': price = 1500; break;
-        case 'set_nest_grandfather': price = 4000; break;
-        case 'set_nest_elder': price = 10000; break;
-        default: break;
-      }
-    }
-
-    bool success = false;
-
-    if ((resourceUsed || (price == 0 || wlntBalance >= price))) {
-      switch (careCode) {
-        case 'water_bucket':
-          trees[idx] = tree.copyWith(currentWater: (tree.currentWater + 20).clamp(0.0, 100.0));
-          _triggerActionEvent(treeId, ActionType.water);
-          success = true;
-          break;
-        case 'water_barrel':
-          trees[idx] = tree.copyWith(currentWater: (tree.currentWater + 50).clamp(0.0, 100.0));
-          _triggerActionEvent(treeId, ActionType.water);
-          success = true;
-          break;
-        case 'water_tank':
-          trees[idx] = tree.copyWith(currentWater: (tree.currentWater + 80).clamp(0.0, 100.0));
-          _triggerActionEvent(treeId, ActionType.water);
-          success = true;
-          break;
-        case 'auto_water_basic':
-          trees[idx] = tree.copyWith(autoWaterDays: 7, autoWaterAmount: 20);
-          _triggerActionEvent(treeId, ActionType.water);
-          success = true;
-          break;
-        case 'auto_water_cistern':
-          trees[idx] = tree.copyWith(autoWaterDays: 7, autoWaterAmount: 50);
-          _triggerActionEvent(treeId, ActionType.water);
-          success = true;
-          break;
-        case 'fertilize_normal':
-          if (tree.status == TreeStatus.growth && tree.seasonDay < seasonLength) {
-            trees[idx] = tree.copyWith(seasonDay: min(tree.seasonDay + 1, seasonLength));
-            _triggerActionEvent(treeId, ActionType.fertilize);
-            success = true;
-          }
-          break;
-        case 'fertilize_super':
-          if (tree.status == TreeStatus.growth && tree.seasonDay < seasonLength) {
-            trees[idx] = tree.copyWith(seasonDay: min(tree.seasonDay + 3, seasonLength));
-            _triggerActionEvent(treeId, ActionType.fertilize);
-            success = true;
-          }
-          break;
-        case 'woodpecker_1':
-          if (tree.caterpillars >= 1) {
-            trees[idx] = tree.copyWith(caterpillars: tree.caterpillars - 1);
-            _triggerActionEvent(treeId, ActionType.bird);
-            success = true;
-          }
-          break;
-        case 'woodpecker_5':
-          if (tree.caterpillars >= 5) {
-            trees[idx] = tree.copyWith(caterpillars: tree.caterpillars - 5);
-            _triggerActionEvent(treeId, ActionType.bird);
-            success = true;
-          }
-          break;
-        case 'woodpecker_10':
-          if (tree.caterpillars >= 10) {
-            trees[idx] = tree.copyWith(caterpillars: tree.caterpillars - 10);
-            _triggerActionEvent(treeId, ActionType.bird);
-            success = true;
-          }
-          break;
-        case 'woodpecker_all':
-          if (tree.caterpillars > 0) {
-            trees[idx] = tree.copyWith(caterpillars: 0);
-            _triggerActionEvent(treeId, ActionType.bird);
-            success = true;
-          }
-          break;
-        case 'set_bucket':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentContainer: 'bucket', waterCollectionProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_barrel':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentContainer: 'barrel', waterCollectionProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_tank':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentContainer: 'tank', waterCollectionProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_nest_son':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentNest: 'son', birdGrowthProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_nest_father':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentNest: 'father', birdGrowthProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_nest_grandfather':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentNest: 'grandfather', birdGrowthProgress: 0.0);
-            success = true;
-          }
-          break;
-        case 'set_nest_elder':
-          if (tree.status == TreeStatus.rest) {
-            trees[idx] = tree.copyWith(currentNest: 'elder', birdGrowthProgress: 0.0);
-            success = true;
-          }
-          break;
-        default: return false;
-      }
-    }
-
-    if (success) {
-      if (resourceUsed) {
-        final key = resourceKey!;
-        inventory[key] = (inventory[key] ?? 0) - 1;
-      } else if (price > 0) {
-        wlntBalance -= price;
-      }
-      final playerEntry = leaderboard.where((e) => e.isPlayer).firstOrNull;
-      if (playerEntry != null) {
-        playerEntry.wlntBalance = wlntBalance;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  void harvestTree(String id) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    final tree = trees[i];
-    if (!tree.canHarvest) return;
-    double income = tree.stats.income * (1 + tree.emotionBonus);
-    wlntBalance += income;
-    _notifyIncome('+${income.toStringAsFixed(0)} WLNT от ${tree.name}');
-    trees[i] = tree.copyWith(
-      status: TreeStatus.rest,
-      seasonDay: 1,
-      caterpillars: 0,
-      currentWater: 100.0,
-      plantedAtGameDay: gameDay,
-    );
-  }
-
-  bool plantTree(String id) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1 || trees[i].isPlanted) return false;
-    trees[i] = trees[i].copyWith(
-        isPlanted: true, status: TreeStatus.growth, currentWater: 100.0,
-        seasonDay: 1, caterpillars: 0, plantedAtGameDay: gameDay);
-    return true;
-  }
-
-  void sellTree(String id, double price) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    trees[i] = trees[i].copyWith(forSale: true, price: price);
-  }
-
-  void cancelSell(String id) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    trees[i] = trees[i].copyWith(forSale: false, price: 0.0);
-  }
-
-  void buyTree(String id, String buyer) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    final tree = trees[i];
-    if (wlntBalance < tree.price) return;
-    wlntBalance -= tree.price;
-    trees[i] = tree.copyWith(
-        owner: buyer, forSale: false, price: 0.0, isPlanted: true,
-        status: TreeStatus.growth, currentWater: 100.0, seasonDay: 1,
-        caterpillars: 0, plantedAtGameDay: gameDay);
-  }
-
-  void burnTree(String id) {
-    final i = trees.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    final tree = trees[i];
-    wlntBalance += 2000;
-    final fertByRarity = <TreeRarity, int>{
-      TreeRarity.common: 1, TreeRarity.uncommon: 3, TreeRarity.rare: 6,
-      TreeRarity.epic: 9, TreeRarity.legendary: 12, TreeRarity.mysterious: 15,
-    };
-    final amount = fertByRarity[tree.rarity] ?? 0;
-    inventory['fertilizer_unit'] = (inventory['fertilizer_unit'] ?? 0) + amount;
-    trees.removeAt(i);
-  }
-
-  void sellResource(String sellerEmail, String resourceType, int quantity, double pricePerUnit) {
-    if ((inventory[resourceType] ?? 0) < quantity) return;
-    inventory[resourceType] = (inventory[resourceType] ?? 0) - quantity;
-    final id = '${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
-    resourceLots.add(ResourceLot(
-      id: id,
-      sellerEmail: sellerEmail,
-      resourceType: resourceType,
-      quantity: quantity,
-      pricePerUnit: pricePerUnit,
-    ));
-  }
-
-  void buyResource(String resourceLotId, String buyerEmail) {
-    final idx = resourceLots.indexWhere((l) => l.id == resourceLotId);
-    if (idx == -1) return;
-    final lot = resourceLots[idx];
-    if (lot.sellerEmail == buyerEmail) return;
-    if (wlntBalance < lot.totalPrice) return;
-    wlntBalance -= lot.totalPrice;
-    inventory[lot.resourceType] = (inventory[lot.resourceType] ?? 0) + lot.quantity;
-    resourceLots.removeAt(idx);
-  }
-
-  void cancelResourceSell(String resourceLotId) {
-    final idx = resourceLots.indexWhere((l) => l.id == resourceLotId);
-    if (idx == -1) return;
-    final lot = resourceLots[idx];
-    inventory[lot.resourceType] = (inventory[lot.resourceType] ?? 0) + lot.quantity;
-    resourceLots.removeAt(idx);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ТЕМА
-// ═══════════════════════════════════════════════════════════════════════════════
-
-abstract final class AppTheme {
-  static const bg = Color(0xFF080A08);
-  static const panel = Color(0xFF12141A);
-  static const panelBorder = Color(0xFF2A3040);
-  static const text = Color(0xFFE8EDE4);
-  static const muted = Color(0xFF7A8A82);
-  static const gold = Color(0xFFFFD54F);
-  static const neutralGradient = [
-    Color(0xFF1C1C1E), Color(0xFF2C2C2E), Color(0xFF3A3A3C), Color(0xFF48484A),
-  ];
-  static List<BoxShadow> neonGlow(Color c, {double blur = 18}) => [
-    BoxShadow(color: c.withOpacity(0.65), blurRadius: blur, spreadRadius: 1),
-    BoxShadow(color: c.withOpacity(0.35), blurRadius: blur * 2),
-  ];
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// НАЧАЛЬНЫЕ ДАННЫЕ
-// ═══════════════════════════════════════════════════════════════════════════════
-
-List<TreeModel> _initialTrees() => [
-  TreeModel(id: '0', imageUrl: 'https://gateway.irys.xyz/9tZ8WoKgNzFzGkvfHYsAjuTyHXKX3FGzLPJNxj2uJ1um',
-    name: '#0', rarity: TreeRarity.mysterious, maxRebirths: 100, rebirthsLeft: 100,
-    currentWater: 100, seasonDay: 0, caterpillars: 0, status: TreeStatus.growth, isPlanted: false,
-    emotion: 'Without emotion', plantedAtGameDay: 1,
-  ),
-  TreeModel(id: '1', imageUrl: 'https://gateway.irys.xyz/Dp69bAFua6UaGxg9ZVC8ne9EjpLrw4cM2MdmU2sx2mVD',
-    name: '#1', rarity: TreeRarity.common, maxRebirths: 3, rebirthsLeft: 3,
-    currentWater: 0, seasonDay: 6, caterpillars: 2, status: TreeStatus.growth, isPlanted: true,
-    emotion: 'Surprised', plantedAtGameDay: 1,
-  ),
-  TreeModel(id: '3', imageUrl: 'https://gateway.irys.xyz/CwHyPeeUwbdf7craVzppiM8AETg1Ww7AceqX1CkmFWeu',
-    name: '#3', rarity: TreeRarity.uncommon, maxRebirths: 5, rebirthsLeft: 5,
-    currentWater: 65, seasonDay: 11, caterpillars: 0, status: TreeStatus.growth, isPlanted: true,
-    emotion: 'Without emotion', plantedAtGameDay: 1,
-  ),
-  TreeModel(id: '6', imageUrl: 'https://gateway.irys.xyz/DSvtn4gMQgkB9n7ivke5uBFca3LEzaeaP98USQtb81Wv',
-    name: '#6', rarity: TreeRarity.common, maxRebirths: 3, rebirthsLeft: 3,
-    currentWater: 70, seasonDay: 20, caterpillars: 0, status: TreeStatus.growth, isPlanted: true,
-    emotion: 'Indifferent', plantedAtGameDay: 1,
-  ),
-  TreeModel(id: '9', imageUrl: 'https://gateway.irys.xyz/FbNbh3F2SMX1GhPjn4TyfRKCD7n9ixLNwiNL8mnD6gBK',
-    name: '#9', rarity: TreeRarity.common, maxRebirths: 3, rebirthsLeft: 3,
-    currentWater: 80, seasonDay: 15, caterpillars: 0, status: TreeStatus.rest, isPlanted: true,
-    emotion: 'Sad', plantedAtGameDay: 1,
-  ),
-  TreeModel(id: '13', imageUrl: 'https://gateway.irys.xyz/GZ9JVevPvu5fbSTKWXKMeTNmL5rC2qW3F6xWzrtu8KLN',
-    name: '#13', rarity: TreeRarity.common, maxRebirths: 3, rebirthsLeft: 3,
-    currentWater: 90, seasonDay: 22, caterpillars: 0, status: TreeStatus.growth, isPlanted: true,
-    emotion: 'Happy', plantedAtGameDay: 1,
-  ),
-];
-
-List<ResourceLot> _initialResourceLots() => [
-  ResourceLot(id: 'sys_w1', sellerEmail: 'system', resourceType: 'water_unit', quantity: 5, pricePerUnit: 150),
-  ResourceLot(id: 'sys_f1', sellerEmail: 'system', resourceType: 'fertilizer_unit', quantity: 2, pricePerUnit: 800),
-  ResourceLot(id: 'sys_b1', sellerEmail: 'system', resourceType: 'bird_unit', quantity: 1, pricePerUnit: 1000),
-];
-
-List<LeaderboardEntry> _initialLeaderboard(String playerEmail) {
-  final rng = Random(42);
-  final bots = ['Bot_Alice', 'Bot_Bob', 'Bot_Carol', 'Bot_Dave', 'Bot_Eve'];
-  final entries = <LeaderboardEntry>[];
-  for (final name in bots) {
-    entries.add(LeaderboardEntry(
-      name: name,
-      wlntBalance: 10000 + rng.nextDouble() * 5000,
-    ));
-  }
-  entries.add(LeaderboardEntry(
-    name: playerEmail,
-    wlntBalance: 12450.75,
-    isPlayer: true,
-  ));
-  return entries;
-}
+import 'package:provider/provider.dart';
+
+import 'app_state.dart';
+import 'engine/game_engine.dart';
+import 'models/game_models.dart';
+import 'services/audio_service.dart';
+import 'theme/app_theme.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // АВТОРИЗАЦИЯ
@@ -935,64 +84,31 @@ class _AuthScreenState extends State<AuthScreen> {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 
-void main() => runApp(const WalnutFarmApp());
-
-class PhoneFrame extends StatelessWidget {
-  const PhoneFrame({super.key, required this.child});
-  final Widget child;
-  static const w = 450.0, h = 900.0;
-  @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A0A0A), body: Center(child: SizedBox(width: w, height: h,
-    child: ClipRRect(borderRadius: BorderRadius.circular(28), child: DecoratedBox(decoration: BoxDecoration(
-      border: Border.all(color: const Color(0xFF2A2A2A), width: 2),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 40, spreadRadius: 4)]),
-      child: child)))));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final appState = await AppState.load();
+  runApp(ChangeNotifierProvider.value(value: appState, child: const WalnutFarmApp()));
 }
 
-class WalnutFarmApp extends StatefulWidget {
+class WalnutFarmApp extends StatelessWidget {
   const WalnutFarmApp({super.key});
-  @override State<WalnutFarmApp> createState() => _WalnutFarmAppState();
-}
 
-class _WalnutFarmAppState extends State<WalnutFarmApp> {
-  bool _logged = false;
-  String _email = '', _myRefCode = '';
-  bool _usedReferral = false;
-  ThemeMode _themeMode = ThemeMode.dark;
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
 
-  void _login(String email, String refCode) {
-    final code = refCode.trim().isNotEmpty
-        ? 'WALNUT${Random().nextInt(999999).toString().padLeft(6, '0')}'
-        : 'WALNUT${email.hashCode.abs().toString().substring(0, 6)}';
-    setState(() { _logged = true; _email = email; _myRefCode = code; _usedReferral = refCode.trim().isNotEmpty; });
-  }
-
-  @override Widget build(BuildContext context) {
-    final initialWlnt = 12450.75 + (_usedReferral ? 1000 : 0);
     return MaterialApp(
       title: 'Walnut Farm',
       debugShowCheckedModeBanner: false,
-      themeMode: _themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4CAF50), brightness: Brightness.light),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: AppTheme.bg,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4CAF50), brightness: Brightness.dark),
-      ),
+      themeMode: state.themeMode,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       builder: (c, child) => PhoneFrame(child: child ?? const SizedBox.shrink()),
-      home: _logged ? MainShell(
-        initialWlnt: initialWlnt,
-        userEmail: _email,
-        myReferralCode: _myRefCode,
-        themeMode: _themeMode,
-        onToggleTheme: () => setState(() => _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark),
-        onLogout: () => setState(() { _logged = false; _email = ''; _myRefCode = ''; _usedReferral = false; }),
-      ) : AuthScreen(onLogin: _login),
+      home: !state.initialized
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : state.logged
+              ? const MainShell()
+              : AuthScreen(onLogin: (email, refCode) => state.login(email, refCode)),
     );
   }
 }
@@ -1002,61 +118,79 @@ class _WalnutFarmAppState extends State<WalnutFarmApp> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class MainShell extends StatefulWidget {
-  const MainShell({
-    super.key,
-    required this.initialWlnt,
-    required this.userEmail,
-    required this.myReferralCode,
-    required this.themeMode,
-    required this.onToggleTheme,
-    required this.onLogout,
-  });
-  final double initialWlnt;
-  final String userEmail, myReferralCode;
-  final ThemeMode themeMode;
-  final VoidCallback onToggleTheme, onLogout;
+  const MainShell({super.key});
 
-  @override State<MainShell> createState() => _MainShellState();
+  @override
+  State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin, WidgetsBindingObserver {
   int _tab = 0;
-  late GameEngine _game;
   String? _selectedTreeId;
   double _solBalance = 2.5;
   Timer? _realtimeTimer;
   late AnimationController _incomeAnimCtrl;
   final List<_FloatingIncome> _floatingIncomes = [];
-  late final AudioPlayer _uiPlayer;
+  late AppState _appState;
+  late AudioService _audioService;
+  bool _listenersAttached = false;
 
-  @override void initState() {
+  @override
+  void initState() {
     super.initState();
-    _game = GameEngine(
-      gameDay: 1,
-      wlntBalance: widget.initialWlnt,
-      trees: _initialTrees(),
-      currentWeather: weatherForCycleDay(1),
-      inventory: {'water_unit': 2, 'fertilizer_unit': 1, 'bird_unit': 0},
-      resourceLots: _initialResourceLots(),
-      leaderboard: _initialLeaderboard(widget.userEmail),
-    );
-    _realtimeTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() => _game.tickRealtime(const Duration(minutes: 1)));
-    });
+    WidgetsBinding.instance.addObserver(this);
     _incomeAnimCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    _game.addIncomeListener(_onIncomeNotification);
-    _uiPlayer = AudioPlayer();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _appState = context.read<AppState>();
+    _audioService = _appState.audioService;
+    if (!_listenersAttached) {
+      _listenersAttached = true;
+      _appState.engine.addIncomeListener(_onIncomeNotification);
+      _appState.startRealtimeTick();
+      _startRealtimeTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _appState.engine.removeIncomeListener(_onIncomeNotification);
+    _incomeAnimCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startRealtimeTimer();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _realtimeTimer?.cancel();
+    }
+  }
+
+  void _startRealtimeTimer() {
+    _realtimeTimer?.cancel();
+    _realtimeTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _appState.engine.tickRealtime(const Duration(minutes: 1));
+      });
+      _appState.saveGame();
+    });
   }
 
   void _onIncomeNotification(String message) {
     _addFloatingIncome(message);
-    _safePlay('sounds/coins.mp3');
+    _audioService.playCoins();
   }
 
   void _safePlay(String asset) {
-    try {
-      _uiPlayer.stop().then((_) => _uiPlayer.play(AssetSource(asset)));
-    } catch (_) {}
+    _audioService.playAsset(asset);
   }
 
   void _addFloatingIncome(String message) {
@@ -1073,71 +207,73 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
     });
   }
 
-  @override void dispose() {
-    _realtimeTimer?.cancel();
-    _game.removeIncomeListener(_onIncomeNotification);
-    _incomeAnimCtrl.dispose();
-    _uiPlayer.dispose();
-    super.dispose();
+  Future<void> _daySkip() async {
+    await _appState.nextDay();
+    if (mounted) setState(() {});
   }
 
-  void _daySkip() => setState(() => _game.nextDay());
   void _selectTree(String? id) => setState(() => _selectedTreeId = id);
 
-  bool _treeAction(String treeId, String action) {
-    bool ok = _game.applyCare(treeId, action);
+  Future<bool> _treeAction(String treeId, String action) async {
+    final ok = await _appState.applyCare(treeId, action);
     if (ok) {
       setState(() {});
-      _safePlay('sounds/click.mp3');
+      _audioService.playClick();
     }
     return ok;
   }
 
-  void _sellTree(String treeId, double price) {
-    final tree = _game.trees.firstWhere((t) => t.id == treeId);
+  Future<void> _sellTree(String treeId, double price) async {
+    final tree = _appState.engine.trees.firstWhere((t) => t.id == treeId);
     if (tree.isPlanted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Нельзя продать посаженное дерево. Дождитесь завершения цикла.')),
       );
       return;
     }
-    setState(() => _game.sellTree(treeId, price));
+    await _appState.sellTree(treeId, price);
     _safePlay('sounds/click.mp3');
   }
 
-  void _cancelSell(String treeId) {
-    setState(() => _game.cancelSell(treeId));
-    _safePlay('sounds/click.mp3');
-  }
-  void _buyTree(String treeId) {
-    setState(() => _game.buyTree(treeId, widget.userEmail));
+  Future<void> _cancelSell(String treeId) async {
+    await _appState.cancelSell(treeId);
     _safePlay('sounds/click.mp3');
   }
 
-  void _sellResource(String resourceType, int quantity, double pricePerUnit) {
-    setState(() => _game.sellResource(widget.userEmail, resourceType, quantity, pricePerUnit));
-    _safePlay('sounds/click.mp3');
-  }
-  void _buyResource(String lotId) {
-    setState(() => _game.buyResource(lotId, widget.userEmail));
-    _safePlay('sounds/click.mp3');
-  }
-  void _cancelResourceSell(String lotId) {
-    setState(() => _game.cancelResourceSell(lotId));
+  Future<void> _buyTree(String treeId) async {
+    await _appState.buyTree(treeId);
     _safePlay('sounds/click.mp3');
   }
 
-  @override Widget build(BuildContext context) {
+  Future<void> _sellResource(String resourceType, int quantity, double pricePerUnit) async {
+    await _appState.sellResource(resourceType, quantity, pricePerUnit);
+    _safePlay('sounds/click.mp3');
+  }
+
+  Future<void> _buyResource(String lotId) async {
+    await _appState.buyResource(lotId);
+    _safePlay('sounds/click.mp3');
+  }
+
+  Future<void> _cancelResourceSell(String lotId) async {
+    await _appState.cancelResourceSell(lotId);
+    _safePlay('sounds/click.mp3');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final game = _appState.engine;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           IndexedStack(index: _tab, children: [
-            FarmScreen(game: _game, selectedId: _selectedTreeId, onDaySkip: _daySkip, onSelectTree: _selectTree, onAction: _treeAction, uiPlayer: _uiPlayer),
-            MarketScreen(game: _game, userEmail: widget.userEmail, onBuyTree: _buyTree, onCancelTreeSell: _cancelSell, onBuyResource: _buyResource, onCancelResourceSell: _cancelResourceSell, onSellResource: _sellResource, uiPlayer: _uiPlayer),
-            LuckyScreen(game: _game, onBurned: (id) => setState(() => _game.burnTree(id)), uiPlayer: _uiPlayer),
-            CollectionScreen(game: _game, userEmail: widget.userEmail, onSelectTree: _selectTree, onPlant: (id) { if (_game.plantTree(id)) setState(() {}); _safePlay('sounds/click.mp3'); }, onSell: _sellTree, onCancelSell: _cancelSell, leaderboard: _game.leaderboard, onHarvest: (id) { setState(() => _game.harvestTree(id)); _safePlay('sounds/click.mp3'); }, uiPlayer: _uiPlayer),
-            WalletScreen(solBalance: _solBalance, wlntBalance: _game.wlntBalance, userEmail: widget.userEmail, myReferralCode: widget.myReferralCode, themeMode: widget.themeMode, onToggleTheme: widget.onToggleTheme, onLogout: widget.onLogout, onDepositSol: (a) => setState(() => _solBalance += a), onWithdrawSol: (a) { if (a <= _solBalance) setState(() => _solBalance -= a); }, onDepositWlnt: (a) => setState(() => _game.wlntBalance += a), onWithdrawWlnt: (a) { if (a <= _game.wlntBalance) setState(() => _game.wlntBalance -= a); }, uiPlayer: _uiPlayer),
+            FarmScreen(game: game, selectedId: _selectedTreeId, onDaySkip: _daySkip, onSelectTree: _selectTree, onAction: _treeAction, audioService: _audioService),
+            MarketScreen(game: game, userEmail: _appState.userEmail, onBuyTree: _buyTree, onCancelTreeSell: _cancelSell, onBuyResource: _buyResource, onCancelResourceSell: _cancelResourceSell, onSellResource: _sellResource, audioService: _audioService),
+            LuckyScreen(game: game, onBurned: (id) async { await _appState.burnTree(id); _audioService.playClick(); }, audioService: _audioService),
+            CollectionScreen(game: game, userEmail: _appState.userEmail, onSelectTree: _selectTree, onPlant: (id) async { if (await _appState.plantTree(id)) setState(() {}); _audioService.playClick(); }, onSell: _sellTree, onCancelSell: _cancelSell, leaderboard: game.leaderboard, onHarvest: (id) async { await _appState.harvestTree(id); _audioService.playClick(); setState(() {}); }, audioService: _audioService),
+            WalletScreen(solBalance: _solBalance, wlntBalance: game.wlntBalance, userEmail: _appState.userEmail, myReferralCode: _appState.referralCode, themeMode: _appState.themeMode, onToggleTheme: () => _appState.setThemeMode(_appState.themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark), onLogout: () async { await _appState.logout(); setState(() {}); }, onDepositSol: (a) async { setState(() => _solBalance += a); }, onWithdrawSol: (a) async { if (a <= _solBalance) setState(() => _solBalance -= a); }, onDepositWlnt: (a) async { await _appState.updateBalances(depositWlnt: a); }, onWithdrawWlnt: (a) async { if (a <= game.wlntBalance) await _appState.updateBalances(withdrawWlnt: a); }, audioService: _audioService),
           ]),
           ..._floatingIncomes.map((f) => Positioned(left: f.offset.dx, top: f.offset.dy - 50 * (1 - f.opacity), child: Opacity(opacity: f.opacity, child: Material(color: Colors.transparent, child: Text(f.message, style: TextStyle(color: AppTheme.gold, fontSize: 16, fontWeight: FontWeight.bold)))))),
         ],
@@ -1146,7 +282,7 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
         selectedIndex: _tab,
         onDestinationSelected: (i) {
           setState(() => _tab = i);
-          _safePlay('sounds/click.mp3');
+          _audioService.playClick();
         },
         backgroundColor: Theme.of(context).colorScheme.surface,
         indicatorColor: const Color(0xFF1B3D1F),
@@ -1161,7 +297,6 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
     );
   }
 }
-
 class _FloatingIncome {
   final String message;
   final Offset offset;
@@ -1174,8 +309,8 @@ class _FloatingIncome {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class FarmScreen extends StatelessWidget {
-  const FarmScreen({super.key, required this.game, required this.selectedId, required this.onDaySkip, required this.onSelectTree, required this.onAction, required this.uiPlayer});
-  final GameEngine game; final String? selectedId; final VoidCallback onDaySkip; final ValueChanged<String?> onSelectTree; final bool Function(String treeId, String action) onAction; final AudioPlayer uiPlayer;
+  const FarmScreen({super.key, required this.game, required this.selectedId, required this.onDaySkip, required this.onSelectTree, required this.onAction, required this.audioService});
+  final GameEngine game; final String? selectedId; final VoidCallback onDaySkip; final ValueChanged<String?> onSelectTree; final bool Function(String treeId, String action) onAction; final AudioService audioService;
 
   TreeModel? _findSelected() => selectedId == null ? null : game.trees.cast<TreeModel?>().firstWhere((t) => t!.id == selectedId, orElse: () => null);
 
@@ -1185,20 +320,20 @@ class FarmScreen extends StatelessWidget {
       Column(children: [
         Expanded(flex: 3, child: VisualGarden(game: game, selectedId: selectedId, onTreeTap: (id) {
           if (selectedId == id) onSelectTree(null); else onSelectTree(id);
-        }, uiPlayer: uiPlayer)),
+        }, audioService: audioService)),
         const SizedBox(height: 8),
         _SkipDayButton(onPressed: onDaySkip),
         const SizedBox(height: 8),
       ]),
       if (selected != null && selected!.isPlanted)
-        Positioned(right: 0, top: 80, bottom: 80, child: ActionPanel(tree: selected!, game: game, onAction: (action) => onAction(selected!.id, action), onClose: () => onSelectTree(null), uiPlayer: uiPlayer)),
+        Positioned(right: 0, top: 80, bottom: 80, child: ActionPanel(tree: selected!, game: game, onAction: (action) => onAction(selected!.id, action), onClose: () => onSelectTree(null), audioService: audioService)),
     ]));
   }
 }
 
 class VisualGarden extends StatefulWidget {
-  const VisualGarden({super.key, required this.game, required this.selectedId, required this.onTreeTap, required this.uiPlayer});
-  final GameEngine game; final String? selectedId; final ValueChanged<String> onTreeTap; final AudioPlayer uiPlayer;
+  const VisualGarden({super.key, required this.game, required this.selectedId, required this.onTreeTap, required this.audioService});
+  final GameEngine game; final String? selectedId; final ValueChanged<String> onTreeTap; final AudioService audioService;
   @override State<VisualGarden> createState() => _VisualGardenState();
 }
 
@@ -1233,9 +368,9 @@ class _VisualGardenState extends State<VisualGarden> with TickerProviderStateMix
           _GlassChip(icon: weather.icon, label: weather.label, color: weather.accent, critical: weather.isCritical),
         ])),
         Padding(padding: const EdgeInsets.only(top: 50), child: Row(children: [
-          Expanded(child: _ZonePanel(title: '🌱 Рост', trees: growthTrees, selectedId: widget.selectedId, onTreeTap: widget.onTreeTap, weather: weather, isGrowth: true, game: game, uiPlayer: widget.uiPlayer)),
+          Expanded(child: _ZonePanel(title: '🌱 Рост', trees: growthTrees, selectedId: widget.selectedId, onTreeTap: widget.onTreeTap, weather: weather, isGrowth: true, game: game, audioService: widget.audioService)),
           Container(width: 2, color: AppTheme.panelBorder.withOpacity(0.4)),
-          Expanded(child: _ZonePanel(title: '❄️ Отдых', trees: restTrees, selectedId: widget.selectedId, onTreeTap: widget.onTreeTap, weather: weather, isGrowth: false, game: game, uiPlayer: widget.uiPlayer)),
+          Expanded(child: _ZonePanel(title: '❄️ Отдых', trees: restTrees, selectedId: widget.selectedId, onTreeTap: widget.onTreeTap, weather: weather, isGrowth: false, game: game, audioService: widget.audioService)),
         ])),
         if (weather == WeatherType.thunderstorm)
           Positioned(top: 50, left: 0, right: 0, bottom: 0, child: IgnorePointer(child: Stack(children: [
@@ -1350,8 +485,8 @@ class _RainPainter extends CustomPainter {
 }
 
 class _ZonePanel extends StatelessWidget {
-  const _ZonePanel({required this.title, required this.trees, required this.selectedId, required this.onTreeTap, required this.weather, required this.isGrowth, required this.game, required this.uiPlayer});
-  final String title; final List<TreeModel> trees; final String? selectedId; final ValueChanged<String> onTreeTap; final WeatherType weather; final bool isGrowth; final GameEngine game; final AudioPlayer uiPlayer;
+  const _ZonePanel({required this.title, required this.trees, required this.selectedId, required this.onTreeTap, required this.weather, required this.isGrowth, required this.game, required this.audioService});
+  final String title; final List<TreeModel> trees; final String? selectedId; final ValueChanged<String> onTreeTap; final WeatherType weather; final bool isGrowth; final GameEngine game; final AudioService audioService;
   @override Widget build(BuildContext context) => Column(children: [
     const SizedBox(height: 4),
     Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: isGrowth ? const Color(0xFF7CFC6E) : const Color(0xFF80D8FF))),
@@ -1359,7 +494,7 @@ class _ZonePanel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 0.85),
       itemCount: trees.length,
-      itemBuilder: (_, i) => NftTreeCard(tree: trees[i], isSelected: trees[i].id == selectedId, onTap: () { onTreeTap(trees[i].id); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, weather: weather, game: game),
+      itemBuilder: (_, i) => NftTreeCard(tree: trees[i], isSelected: trees[i].id == selectedId, onTap: () { onTreeTap(trees[i].id); audioService.playClick(); }, weather: weather, game: game),
     )),
   ]);
 }
@@ -1606,8 +741,8 @@ class _StatusBadge extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ActionPanel extends StatelessWidget {
-  const ActionPanel({super.key, required this.tree, required this.game, required this.onAction, required this.onClose, required this.uiPlayer});
-  final TreeModel tree; final GameEngine game; final void Function(String action) onAction; final VoidCallback onClose; final AudioPlayer uiPlayer;
+  const ActionPanel({super.key, required this.tree, required this.game, required this.onAction, required this.onClose, required this.audioService});
+  final TreeModel tree; final GameEngine game; final void Function(String action) onAction; final VoidCallback onClose; final AudioService audioService;
 
   String _priceLabel(String careCode) {
     final resourceKey = GameEngine._resourceActionMap[careCode];
@@ -1639,40 +774,40 @@ class ActionPanel extends StatelessWidget {
       child: SingleChildScrollView(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Text(tree.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppTheme.text), overflow: TextOverflow.ellipsis)),
-          IconButton(icon: const Icon(Icons.close, size: 20, color: AppTheme.muted), onPressed: () { onClose(); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+          IconButton(icon: const Icon(Icons.close, size: 20, color: AppTheme.muted), onPressed: () { onClose(); audioService.playClick(); }, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         ]),
         const SizedBox(height: 12),
         if (isGrowth) ...[
           _SectionHeader('💧 ПОЛИВ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Ведро\n+20%', _priceLabel('water_bucket'), 'water_bucket', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Бочка\n+50%', _priceLabel('water_barrel'), 'water_barrel', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Бак\n+80%', _priceLabel('water_tank'), 'water_tank', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Ведро\n+20%', _priceLabel('water_bucket'), 'water_bucket', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Бочка\n+50%', _priceLabel('water_barrel'), 'water_barrel', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Бак\n+80%', _priceLabel('water_tank'), 'water_tank', (a) { onAction(a); audioService.playClick(); }),
           ]),
           const SizedBox(height: 12), _SectionHeader('🔄 АВТОПОЛИВ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Базовый\n7д +20%', _priceLabel('auto_water_basic'), 'auto_water_basic', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Цистерна\n7д +50%', _priceLabel('auto_water_cistern'), 'auto_water_cistern', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Базовый\n7д +20%', _priceLabel('auto_water_basic'), 'auto_water_basic', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Цистерна\n7д +50%', _priceLabel('auto_water_cistern'), 'auto_water_cistern', (a) { onAction(a); audioService.playClick(); }),
           ]),
           const SizedBox(height: 12), _SectionHeader('🌿 УДОБРЕНИЯ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Обычное\n-1 день', _priceLabel('fertilize_normal'), 'fertilize_normal', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Супер\n-3 дня', _priceLabel('fertilize_super'), 'fertilize_super', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Обычное\n-1 день', _priceLabel('fertilize_normal'), 'fertilize_normal', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Супер\n-3 дня', _priceLabel('fertilize_super'), 'fertilize_super', (a) { onAction(a); audioService.playClick(); }),
           ]),
           const SizedBox(height: 12), _SectionHeader('🐦 ЗАЩИТА'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Сын\n-1', _priceLabel('woodpecker_1'), 'woodpecker_1', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Отец\n-5', _priceLabel('woodpecker_5'), 'woodpecker_5', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Дед\n-10', _priceLabel('woodpecker_10'), 'woodpecker_10', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Старейшина\nвсе', _priceLabel('woodpecker_all'), 'woodpecker_all', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Сын\n-1', _priceLabel('woodpecker_1'), 'woodpecker_1', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Отец\n-5', _priceLabel('woodpecker_5'), 'woodpecker_5', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Дед\n-10', _priceLabel('woodpecker_10'), 'woodpecker_10', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Старейшина\nвсе', _priceLabel('woodpecker_all'), 'woodpecker_all', (a) { onAction(a); audioService.playClick(); }),
           ]),
         ],
         if (isRest) ...[
           _SectionHeader('💧 СБОР ВОДЫ'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Ведро', _priceLabel('set_bucket'), 'set_bucket', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Бочка', _priceLabel('set_barrel'), 'set_barrel', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Бак', _priceLabel('set_tank'), 'set_tank', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Ведро', _priceLabel('set_bucket'), 'set_bucket', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Бочка', _priceLabel('set_barrel'), 'set_barrel', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Бак', _priceLabel('set_tank'), 'set_tank', (a) { onAction(a); audioService.playClick(); }),
           ]),
           if (tree.currentContainer != null) ...[
             const SizedBox(height: 4),
@@ -1681,10 +816,10 @@ class ActionPanel extends StatelessWidget {
           ],
           const SizedBox(height: 12), _SectionHeader('🐦 ПТИЦЕФЕРМА'), const SizedBox(height: 4),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _SmallCareButton('Сын', _priceLabel('set_nest_son'), 'set_nest_son', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Отец', _priceLabel('set_nest_father'), 'set_nest_father', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Дед', _priceLabel('set_nest_grandfather'), 'set_nest_grandfather', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
-            _SmallCareButton('Старейшина', _priceLabel('set_nest_elder'), 'set_nest_elder', (a) { onAction(a); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }),
+            _SmallCareButton('Сын', _priceLabel('set_nest_son'), 'set_nest_son', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Отец', _priceLabel('set_nest_father'), 'set_nest_father', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Дед', _priceLabel('set_nest_grandfather'), 'set_nest_grandfather', (a) { onAction(a); audioService.playClick(); }),
+            _SmallCareButton('Старейшина', _priceLabel('set_nest_elder'), 'set_nest_elder', (a) { onAction(a); audioService.playClick(); }),
           ]),
           if (tree.currentNest != null) ...[
             const SizedBox(height: 4),
@@ -1763,24 +898,24 @@ class _SkipDayButton extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class MarketScreen extends StatelessWidget {
-  const MarketScreen({super.key, required this.game, required this.userEmail, required this.onBuyTree, required this.onCancelTreeSell, required this.onBuyResource, required this.onCancelResourceSell, required this.onSellResource, required this.uiPlayer});
-  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyTree, onCancelTreeSell, onBuyResource, onCancelResourceSell; final void Function(String resourceType, int quantity, double pricePerUnit) onSellResource; final AudioPlayer uiPlayer;
+  const MarketScreen({super.key, required this.game, required this.userEmail, required this.onBuyTree, required this.onCancelTreeSell, required this.onBuyResource, required this.onCancelResourceSell, required this.onSellResource, required this.audioService});
+  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyTree, onCancelTreeSell, onBuyResource, onCancelResourceSell; final void Function(String resourceType, int quantity, double pricePerUnit) onSellResource; final AudioService audioService;
 
   @override Widget build(BuildContext context) {
     return DefaultTabController(length: 2, child: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 8), child: Text('🏪 МАГАЗИН', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.onBackground, shadows: [Shadow(blurRadius: 12, color: AppTheme.gold.withOpacity(0.5))]))),
-      TabBar(labelColor: AppTheme.gold, unselectedLabelColor: AppTheme.muted, indicatorColor: AppTheme.gold, onTap: (_) => uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))), tabs: const [Tab(text: 'Деревья'), Tab(text: 'Ресурсы')]),
+      TabBar(labelColor: AppTheme.gold, unselectedLabelColor: AppTheme.muted, indicatorColor: AppTheme.gold, onTap: (_) => audioService.playClick(), tabs: const [Tab(text: 'Деревья'), Tab(text: 'Ресурсы')]),
       Expanded(child: TabBarView(children: [
-        _TreeMarketTab(game: game, userEmail: userEmail, onBuyTree: onBuyTree, onCancelTreeSell: onCancelTreeSell, uiPlayer: uiPlayer),
-        _ResourceMarketTab(game: game, userEmail: userEmail, onBuyResource: onBuyResource, onCancelResourceSell: onCancelResourceSell, onSellResource: onSellResource, uiPlayer: uiPlayer),
+        _TreeMarketTab(game: game, userEmail: userEmail, onBuyTree: onBuyTree, onCancelTreeSell: onCancelTreeSell, audioService: audioService),
+        _ResourceMarketTab(game: game, userEmail: userEmail, onBuyResource: onBuyResource, onCancelResourceSell: onCancelResourceSell, onSellResource: onSellResource, audioService: audioService),
       ])),
     ])));
   }
 }
 
 class _TreeMarketTab extends StatelessWidget {
-  const _TreeMarketTab({required this.game, required this.userEmail, required this.onBuyTree, required this.onCancelTreeSell, required this.uiPlayer});
-  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyTree, onCancelTreeSell; final AudioPlayer uiPlayer;
+  const _TreeMarketTab({required this.game, required this.userEmail, required this.onBuyTree, required this.onCancelTreeSell, required this.audioService});
+  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyTree, onCancelTreeSell; final AudioService audioService;
 
   @override Widget build(BuildContext context) {
     final marketTrees = game.trees.where((t) => t.forSale && t.owner != userEmail).toList();
@@ -1795,7 +930,7 @@ class _TreeMarketTab extends StatelessWidget {
             Text(tree.rarity.label, style: TextStyle(color: tree.stats.color)),
             Text('Цена: ${tree.price.toStringAsFixed(0)} WLNT', style: const TextStyle(color: AppTheme.gold)),
           ])),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853)), onPressed: () { onBuyTree(tree.id); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, child: const Text('Купить')),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853)), onPressed: () { onBuyTree(tree.id); audioService.playClick(); }, child: const Text('Купить')),
         ])),
       );
     });
@@ -1803,8 +938,8 @@ class _TreeMarketTab extends StatelessWidget {
 }
 
 class _ResourceMarketTab extends StatelessWidget {
-  const _ResourceMarketTab({required this.game, required this.userEmail, required this.onBuyResource, required this.onCancelResourceSell, required this.onSellResource, required this.uiPlayer});
-  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyResource, onCancelResourceSell; final void Function(String resourceType, int quantity, double pricePerUnit) onSellResource; final AudioPlayer uiPlayer;
+  const _ResourceMarketTab({required this.game, required this.userEmail, required this.onBuyResource, required this.onCancelResourceSell, required this.onSellResource, required this.audioService});
+  final GameEngine game; final String userEmail; final ValueChanged<String> onBuyResource, onCancelResourceSell; final void Function(String resourceType, int quantity, double pricePerUnit) onSellResource; final AudioService audioService;
 
   String _resourceName(String type) => switch (type) { 'water_unit' => '💧 Вода', 'fertilizer_unit' => '🌿 Удобрение', 'bird_unit' => '🐦 Птица', _ => type };
 
@@ -1815,18 +950,18 @@ class _ResourceMarketTab extends StatelessWidget {
         ...lots.map((lot) => Card(color: AppTheme.panel, margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
           Text(_resourceName(lot.resourceType), style: const TextStyle(color: AppTheme.text, fontWeight: FontWeight.w700)), const Spacer(),
           Text('${lot.quantity} шт. x ${lot.pricePerUnit.toStringAsFixed(0)} WLNT', style: const TextStyle(color: AppTheme.gold)),
-          if (lot.sellerEmail == userEmail) TextButton(onPressed: () { onCancelResourceSell(lot.id); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, child: const Text('Снять', style: TextStyle(color: Colors.red)))
-          else ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853)), onPressed: () { onBuyResource(lot.id); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, child: const Text('Купить')),
+          if (lot.sellerEmail == userEmail) TextButton(onPressed: () { onCancelResourceSell(lot.id); audioService.playClick(); }, child: const Text('Снять', style: TextStyle(color: Colors.red)))
+          else ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853)), onPressed: () { onBuyResource(lot.id); audioService.playClick(); }, child: const Text('Купить')),
         ])))),
       const SizedBox(height: 16), Text('Выставить свой лот:', style: TextStyle(color: AppTheme.text, fontWeight: FontWeight.w700)), const SizedBox(height: 8),
-      _SellResourceForm(onSell: onSellResource, inventory: game.inventory, uiPlayer: uiPlayer),
+      _SellResourceForm(onSell: onSellResource, inventory: game.inventory, audioService: audioService),
     ]));
   }
 }
 
 class _SellResourceForm extends StatefulWidget {
-  const _SellResourceForm({required this.onSell, required this.inventory, required this.uiPlayer});
-  final void Function(String resourceType, int quantity, double pricePerUnit) onSell; final Map<String, int> inventory; final AudioPlayer uiPlayer;
+  const _SellResourceForm({required this.onSell, required this.inventory, required this.audioService});
+  final void Function(String resourceType, int quantity, double pricePerUnit) onSell; final Map<String, int> inventory; final AudioService audioService;
   @override State<_SellResourceForm> createState() => _SellResourceFormState();
 }
 
@@ -1843,7 +978,7 @@ class _SellResourceFormState extends State<_SellResourceForm> {
         Expanded(child: TextField(controller: _priceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Цена за шт.'))),
       ]),
       const SizedBox(height: 8),
-      ElevatedButton(onPressed: () { final qty = int.tryParse(_qtyCtrl.text); final price = double.tryParse(_priceCtrl.text); if (qty != null && price != null && qty > 0 && price > 0) { widget.onSell(_type, qty, price); widget.uiPlayer.stop().then((_) => widget.uiPlayer.play(AssetSource('sounds/click.mp3'))); } }, child: const Text('Выставить')),
+      ElevatedButton(onPressed: () { final qty = int.tryParse(_qtyCtrl.text); final price = double.tryParse(_priceCtrl.text); if (qty != null && price != null && qty > 0 && price > 0) { widget.onSell(_type, qty, price); widget.audioService.playClick(); } }, child: const Text('Выставить')),
     ]);
   }
 }
@@ -1853,8 +988,8 @@ class _SellResourceFormState extends State<_SellResourceForm> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class LuckyScreen extends StatefulWidget {
-  const LuckyScreen({super.key, required this.game, required this.onBurned, required this.uiPlayer});
-  final GameEngine game; final ValueChanged<String> onBurned; final AudioPlayer uiPlayer;
+  const LuckyScreen({super.key, required this.game, required this.onBurned, required this.audioService});
+  final GameEngine game; final ValueChanged<String> onBurned; final AudioService audioService;
   @override State<LuckyScreen> createState() => _LuckyScreenState();
 }
 
@@ -1877,14 +1012,14 @@ class _LuckyScreenState extends State<LuckyScreen> {
       if (rnd <= cumulative) { widget.game.wlntBalance += o.reward; setState(() => _result = 'Вы выиграли: ${o.label}'); return; }
     }
     setState(() => _result = 'Вы проиграли');
-    widget.uiPlayer.stop().then((_) => widget.uiPlayer.play(AssetSource('sounds/click.mp3')));
+    widget.audioService.playClick();
   }
 
   void _burnDialog() {
     showDialog(context: context, builder: (ctx) => AlertDialog(backgroundColor: AppTheme.panel, title: const Text('Сжечь NFT', style: TextStyle(color: AppTheme.text)),
       content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: widget.game.trees.length, itemBuilder: (_, i) {
         final tree = widget.game.trees[i];
-        return ListTile(leading: Image.network(tree.imageUrl, width: 40, height: 40, fit: BoxFit.cover), title: Text(tree.name, style: const TextStyle(color: AppTheme.text)), subtitle: Text(tree.rarity.label, style: const TextStyle(color: AppTheme.muted)), onTap: () { Navigator.pop(ctx); widget.onBurned(tree.id); setState(() => _result = 'NFT ${tree.name} сожжён. Получено 2000 WLNT и удобрения.'); widget.uiPlayer.stop().then((_) => widget.uiPlayer.play(AssetSource('sounds/click.mp3'))); });
+        return ListTile(leading: Image.network(tree.imageUrl, width: 40, height: 40, fit: BoxFit.cover), title: Text(tree.name, style: const TextStyle(color: AppTheme.text)), subtitle: Text(tree.rarity.label, style: const TextStyle(color: AppTheme.muted)), onTap: () { Navigator.pop(ctx); widget.onBurned(tree.id); setState(() => _result = 'NFT ${tree.name} сожжён. Получено 2000 WLNT и удобрения.'); widget.audioService.playClick(); });
       })),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена'))],
     ));
@@ -1917,15 +1052,15 @@ class _Outcome { final double prob, reward; final String label; const _Outcome({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class CollectionScreen extends StatelessWidget {
-  const CollectionScreen({super.key, required this.game, required this.userEmail, required this.onSelectTree, required this.onPlant, required this.onSell, required this.onCancelSell, required this.leaderboard, required this.onHarvest, required this.uiPlayer});
-  final GameEngine game; final String userEmail; final ValueChanged<String> onSelectTree, onPlant, onCancelSell; final void Function(String treeId, double price) onSell; final List<LeaderboardEntry> leaderboard; final ValueChanged<String> onHarvest; final AudioPlayer uiPlayer;
+  const CollectionScreen({super.key, required this.game, required this.userEmail, required this.onSelectTree, required this.onPlant, required this.onSell, required this.onCancelSell, required this.leaderboard, required this.onHarvest, required this.audioService});
+  final GameEngine game; final String userEmail; final ValueChanged<String> onSelectTree, onPlant, onCancelSell; final void Function(String treeId, double price) onSell; final List<LeaderboardEntry> leaderboard; final ValueChanged<String> onHarvest; final AudioService audioService;
 
   @override Widget build(BuildContext context) {
     return DefaultTabController(length: 3, child: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 8), child: Text('ВАША КОЛЛЕКЦИЯ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.onBackground, shadows: [Shadow(blurRadius: 12, color: AppTheme.gold.withOpacity(0.5))]))),
-      TabBar(labelColor: AppTheme.gold, unselectedLabelColor: AppTheme.muted, indicatorColor: AppTheme.gold, onTap: (_) => uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))), tabs: const [Tab(text: 'Деревья'), Tab(text: 'Ресурсы'), Tab(text: 'Рейтинг')]),
+      TabBar(labelColor: AppTheme.gold, unselectedLabelColor: AppTheme.muted, indicatorColor: AppTheme.gold, onTap: (_) => audioService.playClick(), tabs: const [Tab(text: 'Деревья'), Tab(text: 'Ресурсы'), Tab(text: 'Рейтинг')]),
       Expanded(child: TabBarView(children: [
-        _CollectionTreeTab(game: game, userEmail: userEmail, onSelectTree: onSelectTree, onPlant: onPlant, onSell: onSell, onCancelSell: onCancelSell, onHarvest: onHarvest, uiPlayer: uiPlayer),
+        _CollectionTreeTab(game: game, userEmail: userEmail, onSelectTree: onSelectTree, onPlant: onPlant, onSell: onSell, onCancelSell: onCancelSell, onHarvest: onHarvest, audioService: audioService),
         _ResourcesTab(game: game),
         LeaderboardScreen(leaderboard: leaderboard),
       ])),
@@ -1943,8 +1078,8 @@ class _ResourcesTab extends StatelessWidget {
 }
 
 class _CollectionTreeTab extends StatelessWidget {
-  const _CollectionTreeTab({required this.game, required this.userEmail, required this.onSelectTree, required this.onPlant, required this.onSell, required this.onCancelSell, required this.onHarvest, required this.uiPlayer});
-  final GameEngine game; final String userEmail; final ValueChanged<String> onSelectTree, onPlant, onCancelSell, onHarvest; final void Function(String treeId, double price) onSell; final AudioPlayer uiPlayer;
+  const _CollectionTreeTab({required this.game, required this.userEmail, required this.onSelectTree, required this.onPlant, required this.onSell, required this.onCancelSell, required this.onHarvest, required this.audioService});
+  final GameEngine game; final String userEmail; final ValueChanged<String> onSelectTree, onPlant, onCancelSell, onHarvest; final void Function(String treeId, double price) onSell; final AudioService audioService;
 
   void _showDetails(BuildContext context, TreeModel tree) {
     final bool isOwner = tree.owner == userEmail || tree.owner.isEmpty;
@@ -2002,7 +1137,7 @@ class _CollectionTreeTab extends StatelessWidget {
   }
 
   void _safePlay(String asset) {
-    try { uiPlayer.stop().then((_) => uiPlayer.play(AssetSource(asset))); } catch (_) {}
+    try { audioService.playAsset(asset); } catch (_) {}
   }
 
   @override Widget build(BuildContext context) {
@@ -2060,8 +1195,8 @@ class _CollectionCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class WalletScreen extends StatelessWidget {
-  const WalletScreen({super.key, required this.solBalance, required this.wlntBalance, required this.userEmail, required this.myReferralCode, required this.themeMode, required this.onToggleTheme, required this.onLogout, required this.onDepositSol, required this.onWithdrawSol, required this.onDepositWlnt, required this.onWithdrawWlnt, required this.uiPlayer});
-  final double solBalance, wlntBalance; final String userEmail, myReferralCode; final ThemeMode themeMode; final VoidCallback onToggleTheme, onLogout; final ValueChanged<double> onDepositSol, onWithdrawSol, onDepositWlnt, onWithdrawWlnt; final AudioPlayer uiPlayer;
+  const WalletScreen({super.key, required this.solBalance, required this.wlntBalance, required this.userEmail, required this.myReferralCode, required this.themeMode, required this.onToggleTheme, required this.onLogout, required this.onDepositSol, required this.onWithdrawSol, required this.onDepositWlnt, required this.onWithdrawWlnt, required this.audioService});
+  final double solBalance, wlntBalance; final String userEmail, myReferralCode; final ThemeMode themeMode; final VoidCallback onToggleTheme, onLogout; final ValueChanged<double> onDepositSol, onWithdrawSol, onDepositWlnt, onWithdrawWlnt; final AudioService audioService;
 
   Future<void> _amountDialog(BuildContext context, String title, String label, ValueChanged<double> onConfirm) async {
     final ctrl = TextEditingController(); final formKey = GlobalKey<FormState>();
@@ -2077,8 +1212,8 @@ class WalletScreen extends StatelessWidget {
   @override Widget build(BuildContext context) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [
       Expanded(child: Text('КОШЕЛЁК', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.onBackground, shadows: [Shadow(blurRadius: 12, color: AppTheme.gold.withOpacity(0.5))]))),
-      IconButton(icon: Icon(themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode, color: AppTheme.gold), onPressed: () { onToggleTheme(); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, tooltip: 'Переключить тему'),
-      IconButton(icon: const Icon(Icons.logout, color: AppTheme.muted), onPressed: () { onLogout(); uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); }, tooltip: 'Выйти'),
+      IconButton(icon: Icon(themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode, color: AppTheme.gold), onPressed: () { onToggleTheme(); audioService.playClick(); }, tooltip: 'Переключить тему'),
+      IconButton(icon: const Icon(Icons.logout, color: AppTheme.muted), onPressed: () { onLogout(); audioService.playClick(); }, tooltip: 'Выйти'),
     ]),
     const SizedBox(height: 8), Text(userEmail, style: const TextStyle(color: AppTheme.muted, fontSize: 14)),
     const SizedBox(height: 4), Text('Мой код: $myReferralCode', style: const TextStyle(color: AppTheme.gold, fontSize: 14)),
@@ -2086,17 +1221,17 @@ class WalletScreen extends StatelessWidget {
     _BalanceCard(icon: Icons.currency_bitcoin, label: 'Solana (SOL)', balance: solBalance.toStringAsFixed(4), color: const Color(0xFF9945FF)),
     const SizedBox(height: 16),
     Row(children: [
-      Expanded(child: _ActionChip(label: 'Пополнить', icon: Icons.add_circle_outline, onTap: () { uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); _amountDialog(context, 'Пополнить SOL', 'Сумма SOL', onDepositSol); })),
+      Expanded(child: _ActionChip(label: 'Пополнить', icon: Icons.add_circle_outline, onTap: () { audioService.playClick(); _amountDialog(context, 'Пополнить SOL', 'Сумма SOL', onDepositSol); })),
       const SizedBox(width: 12),
-      Expanded(child: _ActionChip(label: 'Вывести', icon: Icons.arrow_circle_up_outlined, onTap: () { uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); _amountDialog(context, 'Вывести SOL', 'Сумма SOL', (a) { if (a <= solBalance) onWithdrawSol(a); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Недостаточно средств'))); }); })),
+      Expanded(child: _ActionChip(label: 'Вывести', icon: Icons.arrow_circle_up_outlined, onTap: () { audioService.playClick(); _amountDialog(context, 'Вывести SOL', 'Сумма SOL', (a) { if (a <= solBalance) onWithdrawSol(a); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Недостаточно средств'))); }); })),
     ]),
     const SizedBox(height: 32),
     _BalanceCard(icon: Icons.eco, label: 'Walnut Token (WLNT)', balance: _fmt(wlntBalance), color: AppTheme.gold),
     const SizedBox(height: 16),
     Row(children: [
-      Expanded(child: _ActionChip(label: 'Пополнить', icon: Icons.add_circle_outline, onTap: () { uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); _amountDialog(context, 'Пополнить WLNT', 'Сумма WLNT', onDepositWlnt); })),
+      Expanded(child: _ActionChip(label: 'Пополнить', icon: Icons.add_circle_outline, onTap: () { audioService.playClick(); _amountDialog(context, 'Пополнить WLNT', 'Сумма WLNT', onDepositWlnt); })),
       const SizedBox(width: 12),
-      Expanded(child: _ActionChip(label: 'Вывести', icon: Icons.arrow_circle_up_outlined, onTap: () { uiPlayer.stop().then((_) => uiPlayer.play(AssetSource('sounds/click.mp3'))); _amountDialog(context, 'Вывести WLNT', 'Сумма WLNT', (a) { if (a <= wlntBalance) onWithdrawWlnt(a); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Недостаточно средств'))); }); })),
+      Expanded(child: _ActionChip(label: 'Вывести', icon: Icons.arrow_circle_up_outlined, onTap: () { audioService.playClick(); _amountDialog(context, 'Вывести WLNT', 'Сумма WLNT', (a) { if (a <= wlntBalance) onWithdrawWlnt(a); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Недостаточно средств'))); }); })),
     ]),
   ]))));
 
